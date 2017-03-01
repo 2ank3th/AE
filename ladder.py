@@ -278,7 +278,6 @@ print "Initial Accuracy: ", sess.run(accuracy, feed_dict={inputs: mnist.test.ima
 
 for i in tqdm(range(i_iter, num_iter)):
     images, labels = mnist.train.next_batch(batch_size)
-    sess.run(train_step, feed_dict={inputs: images, outputs: labels, training: True})
     if (i > 1) and ((i+1) % (num_iter/num_epochs) == 0):
         epoch_n = i/(num_examples/batch_size)
         if (epoch_n+1) >= decay_after:
