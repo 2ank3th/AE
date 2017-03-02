@@ -60,8 +60,10 @@ trainset_labeled = pickle.load(open("train_labeled.p", "rb"))
 #trainset_unlabeled = pickle.load(open("train_unlabeled_small.p", "rb"))
 
 def bi(inits, size, name,obj):
+    #temp = torch.randn(size).type(dtype)
+    #tv = Variable(temp)
+    #tv.register_parameter(
     para = nn.Parameter(torch.randn(size).type(dtype))
-    print(name+str(size))
     obj.register_parameter(name+str(size),para)
     return para
     #return Variable(inits * torch.ones(size))
@@ -94,7 +96,7 @@ train_loader = torch.utils.data.DataLoader(trainset_labeled, batch_size=101, shu
 class VAE(nn.Module):
     def __init__(self):
         super(VAE, self).__init__()
-
+              
         self.weights = {'W': [wi(s, "W",self) for s in shapes],  # Encoder weights
            'V': [wi(s[::-1], "V",self) for s in shapes],  # Decoder weights
            # batch normalization parameter to shift the normalized value
@@ -128,8 +130,10 @@ class VAE(nn.Module):
 
 
     def encoder(self,inputs, noise_std):
+        print("input size: " + str(inputs.size()))
+        print("input data size: " + str(inputs.data.size()))
         h = Variable(inputs.data + torch.mul(torch.randn(inputs.size()),noise_std))
-        d ={}
+        d = {}
         d['labeled'] = {'z': {}, 'm': {}, 'v': {}, 'h': {}}
         d['unlabeled'] = {'z': {}, 'm': {}, 'v': {}, 'h': {}}
 
@@ -138,14 +142,16 @@ class VAE(nn.Module):
         for l in xrange(1,L+1):
             print("Layer " + str(l)+ ": "+ str(layer_sizes[l - 1])+ " -> "+ str(layer_sizes[l]))
             d['labeled']['h'][l - 1], d['unlabeled']['h'][l - 1] = split_lu(h)
-            print(self.weights['W'][l - 1].size())
+            print("weight: " + str(self.weights['W'][l - 1].size()))
+            print("h: " + str(h.size()))
+            
             z_pre = torch.mm(h, self.weights['W'][l - 1])  # pre-activation
             z_pre_l, z_pre_u = split_lu(z_pre)  # split labeled and unlabeled examples
-
-            m, v = torch.mean(z_pre_u, 1), torch.var(z_pre_u, 1)
+            m, v = torch.mean(z_pre_u.data, 1), torch.var(z_pre_u.data, 1)
 
             print("tensor size :" + str(z_pre.size()))
             batch_norm = torch.nn.BatchNorm1d(z_pre.size()[1])
+         
             # perform batch normalization according to value of boolean "training" placeholder:
             z = batch_norm(z_pre)
 
@@ -157,10 +163,14 @@ class VAE(nn.Module):
             else:
                 # use ReLU activation in hidden layers
                 relU = torch.nn.ReLU()
+                
+                print("z: " + str(z.size()))
+                print("beta weight: " + str(self.weights["beta"][l - 1].size()))
+        
                 h = relU(z + self.weights["beta"][l - 1])
+                print("h size in hidden layer: " + str(h.size()))
             d['labeled']['z'][l], d['unlabeled']['z'][l] = split_lu(z)
-            d['unlabeled']['m'][l], d['unlabeled']['v'][
-                l] = m, v  # save mean and variance of unlabeled examples for decoding
+            d['unlabeled']['m'][l], d['unlabeled']['v'][l] = m, v  # save mean and variance of unlabeled examples for decoding
         d['labeled']['h'][l], d['unlabeled']['h'][l] = split_lu(h)
         return h, d
 
