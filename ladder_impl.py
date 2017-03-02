@@ -55,9 +55,9 @@ if args.cuda:
 
 
 print('loading data!')
-trainset_labeled = pickle.load(open("script/train_labeled.p", "rb"))
-validset = pickle.load(open("script/validation.p", "rb"))
-trainset_unlabeled = pickle.load(open("script/train_unlabeled.p", "rb"))
+trainset_labeled = pickle.load(open("train_labeled_small.p", "rb"))
+validset = pickle.load(open("validation_small.p", "rb"))
+trainset_unlabeled = pickle.load(open("train_unlabeled_small.p", "rb"))
 
 def bi(inits, size, name):
     return Variable(inits * torch.ones(size))
