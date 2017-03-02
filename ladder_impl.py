@@ -84,6 +84,7 @@ weights = {'W': [wi(s, "W") for s in shapes],  # Encoder weights
            'gamma': [bi(1.0, layer_sizes[l+1], "beta") for l in range(L)]}
 
 
+kwargs = {'num_workers': 1, 'pin_memory': True} if args.cuda else {}
 
 train_loader = torch.utils.data.DataLoader(trainset_labeled, batch_size=64, shuffle=True, **kwargs)
 valid_loader = torch.utils.data.DataLoader(validset, batch_size=64, shuffle=True)
