@@ -55,16 +55,24 @@ if args.cuda:
 
 
 print('loading data!')
-trainset_labeled = pickle.load(open("train_labeled_small.p", "rb"))
-validset = pickle.load(open("validation_small.p", "rb"))
-trainset_unlabeled = pickle.load(open("train_unlabeled_small.p", "rb"))
+trainset_labeled = pickle.load(open("train_labeled.p", "rb"))
+#validset = pickle.load(open("validation.p", "rb"))
+#trainset_unlabeled = pickle.load(open("train_unlabeled_small.p", "rb"))
 
-def bi(inits, size, name):
-    return Variable(inits * torch.ones(size))
+def bi(inits, size, name,obj):
+    para = nn.Parameter(torch.randn(size).type(dtype))
+    print(name+str(size))
+    obj.register_parameter(name+str(size),para)
+    return para
+    #return Variable(inits * torch.ones(size))
 
 
-def wi(shape, name):
-    return Variable(torch.randn(shape[0],shape[1])) / math.sqrt(shape[0])
+def wi(shape, name,obj):
+    para = nn.Parameter(torch.randn(shape[0],shape[1]).type(dtype))
+    print(name + str(shape[0]) + str(shape[1])) #TODO revisit name logic to avoid conflicts
+    obj.register_parameter(name + str(shape[0]) + str(shape[1]),para)
+    return para
+    #return Variable(torch.randn(shape[0],shape[1])) / math.sqrt(shape[0])
 
 shapes = zip(layer_sizes[:-1], layer_sizes[1:])  # shapes of linear layers
 
@@ -72,27 +80,27 @@ shapes = zip(layer_sizes[:-1], layer_sizes[1:])  # shapes of linear layers
 join = lambda l, u: torch.cat([l, u], 0)
 labeled = lambda x: torch.narrow(x, [0, 0], [batch_size, -1]) if x is not None else x
 unlabeled = lambda x: torch.narrow(x, [batch_size, 0], [-1, -1]) if x is not None else x
-split_lu = lambda x: (labeled(x), unlabeled(x))
+split_lu = lambda x: (x, x ) #TODO split input
 
-
-
-weights = {'W': [wi(s, "W") for s in shapes],  # Encoder weights
-           'V': [wi(s[::-1], "V") for s in shapes],  # Decoder weights
-           # batch normalization parameter to shift the normalized value
-           'beta': [bi(0.0, layer_sizes[l+1], "beta") for l in range(L)],
-           # batch normalization parameter to scale the normalized value
-           'gamma': [bi(1.0, layer_sizes[l+1], "beta") for l in range(L)]}
 
 
 kwargs = {'num_workers': 1, 'pin_memory': True} if args.cuda else {}
 
-train_loader = torch.utils.data.DataLoader(trainset_labeled, batch_size=64, shuffle=True, **kwargs)
-valid_loader = torch.utils.data.DataLoader(validset, batch_size=64, shuffle=True)
+print(trainset_labeled.train_data.size())
+train_loader = torch.utils.data.DataLoader(trainset_labeled, batch_size=101, shuffle=True, **kwargs)
+#valid_loader = torch.utils.data.DataLoader(validset, batch_size=64, shuffle=True)
 
 
 class VAE(nn.Module):
     def __init__(self):
         super(VAE, self).__init__()
+
+        self.weights = {'W': [wi(s, "W",self) for s in shapes],  # Encoder weights
+           'V': [wi(s[::-1], "V",self) for s in shapes],  # Decoder weights
+           # batch normalization parameter to shift the normalized value
+           'beta': [bi(0.0, layer_sizes[l+1], "beta",self) for l in range(L)],
+           # batch normalization parameter to scale the normalized value
+           'gamma': [bi(1.0, layer_sizes[l+1], "beta",self) for l in range(L)]}
 
     def g_gauss(z_c, u, size):
         "gaussian denoising function proposed in the original paper"
@@ -120,7 +128,7 @@ class VAE(nn.Module):
 
 
     def encoder(self,inputs, noise_std):
-        h = inputs + torch.randn(torch.size(inputs)) * noise_std
+        h = Variable(inputs.data + torch.mul(torch.randn(inputs.size()),noise_std))
         d ={}
         d['labeled'] = {'z': {}, 'm': {}, 'v': {}, 'h': {}}
         d['unlabeled'] = {'z': {}, 'm': {}, 'v': {}, 'h': {}}
@@ -128,15 +136,16 @@ class VAE(nn.Module):
         d['labeled']['z'][0], d['unlabeled']['z'][0] = split_lu(h)
 
         for l in xrange(1,L+1):
-            print("Layer " + l+ ": "+ layer_sizes[l - 1]+ " -> "+ layer_sizes[l])
+            print("Layer " + str(l)+ ": "+ str(layer_sizes[l - 1])+ " -> "+ str(layer_sizes[l]))
             d['labeled']['h'][l - 1], d['unlabeled']['h'][l - 1] = split_lu(h)
-            z_pre = torch.mm(h, weights['W'][l - 1])  # pre-activation
+            print(self.weights['W'][l - 1].size())
+            z_pre = torch.mm(h, self.weights['W'][l - 1])  # pre-activation
             z_pre_l, z_pre_u = split_lu(z_pre)  # split labeled and unlabeled examples
 
             m, v = torch.mean(z_pre_u, 1), torch.var(z_pre_u, 1)
 
-            print("tensor size :" + z_pre.size)
-            batch_norm = torch.nn.BatchNorm2d(64*z_pre.size[0]*z_pre.size[1])
+            print("tensor size :" + str(z_pre.size()))
+            batch_norm = torch.nn.BatchNorm1d(z_pre.size()[1])
             # perform batch normalization according to value of boolean "training" placeholder:
             z = batch_norm(z_pre)
 
@@ -144,11 +153,11 @@ class VAE(nn.Module):
                 # use softmax activation in output layer
                 softmax = torch.nn.Softmax()
 
-                h = softmax(weights['gamma'][l - 1] * (z + weights["beta"][l - 1]))
+                h = softmax(self.weights['gamma'][l - 1] * (z + self.weights["beta"][l - 1]))
             else:
                 # use ReLU activation in hidden layers
                 relU = torch.nn.ReLU()
-                h = relU(z + weights["beta"][l - 1])
+                h = relU(z + self.weights["beta"][l - 1])
             d['labeled']['z'][l], d['unlabeled']['z'][l] = split_lu(z)
             d['unlabeled']['m'][l], d['unlabeled']['v'][
                 l] = m, v  # save mean and variance of unlabeled examples for decoding
@@ -168,7 +177,7 @@ class VAE(nn.Module):
             if l == L:
                 u = unlabeled(y_corr)
             else:
-                u = torch.matmul(z_est[l + 1], weights['V'][l])
+                u = torch.matmul(z_est[l + 1], self.weights['V'][l])
                 # u = tf.matmul(z_est[l+1], weights['V'][l])
 
             batch_norm = torch.nn.BatchNorm2d(64*u.size[0]*u.size[1])
@@ -184,10 +193,10 @@ class VAE(nn.Module):
         return d_cost
 
     def forward(self, x):
-        h1,d1 = self.encode(x.view(-1, 784),0) #TODO: add noise
-        h2, d2 = self.encode(x.view(-1, 784),0)
+        h1,d1 = self.encoder(x,0) #TODO: add noise
+        h2, d2 = self.encoder(x,0)
 
-        d_cost = self.decode(h1, d1)
+        d_cost = self.decoder(h1, d1)
 
         # calculate total unsupervised cost by adding the denoising cost of all layers
         u_cost = torch.zeros(torch.size(d_cost[0]))
@@ -205,10 +214,13 @@ class VAE(nn.Module):
 
 model  = VAE()
 
+optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum) #TODO: change to something
+
 def train(epoch):
     model.train()
     for batch_idx, (data, target) in enumerate(train_loader):
         data, target = Variable(data), Variable(target)
+        data = data.view(-1,784) #TODO possible reason of bad accuracy
         optimizer.zero_grad()
         output = model(data)
         loss = F.nll_loss(output, target)
