@@ -57,39 +57,36 @@ if args.cuda:
 print('loading data!')
 trainset_labeled = pickle.load(open("train_labeled.p", "rb"))
 #validset = pickle.load(open("validation.p", "rb"))
-#trainset_unlabeled = pickle.load(open("train_unlabeled_small.p", "rb"))
+trainset_unlabeled = pickle.load(open("train_unlabeled_small.p", "rb"))
 
-def bi(inits, size, name,obj):
+def bi(layer, size, name,obj):
     #temp = torch.randn(size).type(dtype)
     #tv = Variable(temp)
     #tv.register_parameter(
     para = nn.Parameter(torch.randn(size).type(dtype))
-    obj.register_parameter(name+str(size),para)
+    obj.register_parameter(str(layer)+name+str(size),para)
     return para
     #return Variable(inits * torch.ones(size))
 
 
-def wi(shape, name,obj):
+def wi(layer,shape, name,obj):
     para = nn.Parameter(torch.randn(shape[0],shape[1]).type(dtype))
-    print(name + str(shape[0]) + str(shape[1])) #TODO revisit name logic to avoid conflicts
-    obj.register_parameter(name + str(shape[0]) + str(shape[1]),para)
-    return para
+    #print(str(layer)+name + str(shape[0]) + str(shape[1])) #TODO revisit name logic to avoid conflicts
+    obj.register_parameter(str(layer)+name + str(shape[0]) + str(shape[1]),para)
     #return Variable(torch.randn(shape[0],shape[1])) / math.sqrt(shape[0])
+    return para
 
 shapes = zip(layer_sizes[:-1], layer_sizes[1:])  # shapes of linear layers
 
 
 join = lambda l, u: torch.cat([l, u], 0)
-labeled = lambda x: torch.narrow(x, [0, 0], [batch_size, -1]) if x is not None else x
-unlabeled = lambda x: torch.narrow(x, [batch_size, 0], [-1, -1]) if x is not None else x
-split_lu = lambda x: (x, x ) #TODO split input
-
-
 
 kwargs = {'num_workers': 1, 'pin_memory': True} if args.cuda else {}
 
 print(trainset_labeled.train_data.size())
-train_loader = torch.utils.data.DataLoader(trainset_labeled, batch_size=64, shuffle=True, **kwargs)
+train_loader = torch.utils.data.DataLoader(trainset_labeled , batch_size=64, shuffle=True, **kwargs)
+unlabeled_train_loader = torch.utils.data.DataLoader( trainset_unlabeled, batch_size=64, shuffle=True, **kwargs)
+
 #valid_loader = torch.utils.data.DataLoader(validset, batch_size=64, shuffle=True)
 
 reconstruction_function = nn.BCELoss()
@@ -99,12 +96,18 @@ class VAE(nn.Module):
     def __init__(self):
         super(VAE, self).__init__()
               
-        self.weights = {'W': [wi(s, "W",self) for s in shapes],  # Encoder weights
-           'V': [wi(s[::-1], "V",self) for s in shapes],  # Decoder weights
+        self.weights = {'W': [wi(i,s, "W",self) for i,s in enumerate(shapes)],  # Encoder weights
+           'V': [wi(i,s[::-1], "V",self) for i,s in enumerate(shapes)],  # Decoder weights
            # batch normalization parameter to shift the normalized value
-           'beta': [bi(0.0, layer_sizes[l+1], "beta",self) for l in range(L)],
+           'beta': [bi(l, layer_sizes[l+1], "beta",self) for l in range(L)],
            # batch normalization parameter to scale the normalized value
-           'gamma': [bi(1.0, layer_sizes[l+1], "beta",self) for l in range(L)]}
+           'gamma': [bi(l, layer_sizes[l+1], "beta",self) for l in range(L)]}
+
+    def split_input(self, h, labeled):
+        if labeled:
+            return h, h
+        else:
+            return None, h
 
     def g_gauss(self,z_c, u, size):
         print("sizze" + str(size))
@@ -134,35 +137,41 @@ class VAE(nn.Module):
         # mu = a1 * tf.sigmoid(a2 * u + a3) + a4 * u + a5
         # v = a6 * tf.sigmoid(a7 * u + a8) + a9 * u + a10
 
+        print(mu)
+        print(v)
+        print(z_c)
         z_est = (z_c - mu) * v + mu
         return z_est
 
 
-    def encoder(self,inputs, noise_std):
-        print("input size: " + str(inputs.size()))
-        print("input data size: " + str(inputs.data.size()))
-        h = Variable(inputs.data + torch.mul(torch.randn(inputs.size()),noise_std))
+    def encoder(self,inputs, noise_std, labeled):
+        h = Variable(inputs.data + torch.mul(torch.randn(inputs.size()),noise_std),requires_grad = False)
+
         d = {}
         d['labeled'] = {'z': {}, 'm': {}, 'v': {}, 'h': {}}
         d['unlabeled'] = {'z': {}, 'm': {}, 'v': {}, 'h': {}}
 
-        d['labeled']['z'][0], d['unlabeled']['z'][0] = split_lu(h)
+        d['labeled']['z'][0], d['unlabeled']['z'][0] = self.split_input(h,labeled)
 
         for l in xrange(1,L+1):
+
             print("Layer " + str(l)+ ": "+ str(layer_sizes[l - 1])+ " -> "+ str(layer_sizes[l]))
-            d['labeled']['h'][l - 1], d['unlabeled']['h'][l - 1] = split_lu(h)
-            print("weight: " + str(self.weights['W'][l - 1].size()))
-            print("h: " + str(h.size()))
+
+            d['labeled']['h'][l - 1], d['unlabeled']['h'][l - 1] = self.split_input(h,labeled)
+
             
             z_pre = torch.mm(h, self.weights['W'][l - 1])  # pre-activation
-            z_pre_l, z_pre_u = split_lu(z_pre)  # split labeled and unlabeled examples
-            m, v = torch.mean(z_pre_u.data, 1), torch.var(z_pre_u.data, 1)
 
-            print("tensor size :" + str(z_pre.size()))
+            z_pre_l, z_pre_u = self.split_input(z_pre,labeled)  # split labeled and unlabeled examples
+
+            if not labeled:
+                m, v = torch.mean(z_pre_u.data, 1), torch.var(z_pre_u.data, 1)
+                d['unlabeled']['m'][l], d['unlabeled']['v'][l] = m, v  # save mean and variance of unlabeled examples for decoding
+
             batch_norm = torch.nn.BatchNorm1d(z_pre.size()[1])
          
-            # perform batch normalization according to value of boolean "training" placeholder:
             z = batch_norm(z_pre)
+            #TODO: BN for test is different
 
             if l == L:
                 # use softmax activation in output layer
@@ -174,25 +183,28 @@ class VAE(nn.Module):
                 # use ReLU activation in hidden layers
                 relU = torch.nn.ReLU()
 
-                print("z: " + str(z.size()))
-                print("beta weight: " + str(self.weights["beta"][l - 1].size()))
-        
                 h = relU(z) #TODO + self.weights["beta"][l - 1])
-                print("h size in hidden layer: " + str(h.size()))
-            d['labeled']['z'][l], d['unlabeled']['z'][l] = split_lu(z)
-            d['unlabeled']['m'][l], d['unlabeled']['v'][l] = m, v  # save mean and variance of unlabeled examples for decoding
-        d['labeled']['h'][l], d['unlabeled']['h'][l] = split_lu(h)
+
+            d['labeled']['z'][l], d['unlabeled']['z'][l] = self.split_input(z,labeled)
+
+
+
+        d['labeled']['h'][l], d['unlabeled']['h'][l] = self.split_input(h,labeled)
+
         return h, d
 
 
     def decoder(self,h_clean,h_corr,  d_clean, d_corr):
         # Decoder
         z_est = {}
-        d_cost = Variable(torch.FloatTensor(L))  # to store the denoising cost of all layers
+        d_cost = Variable(torch.FloatTensor(L + 1), requires_grad=False) # to store the denoising cost of all layers
+
         for l in range(L, 0, -1): #TODO: last layer not run
             print ("Layer ", l, ": ", layer_sizes[l + 1] if l + 1 < len(layer_sizes) else None, " -> ", layer_sizes[
                 l], ", denoising cost: ", denoising_cost[l])
+
             z, z_c = d_clean['unlabeled']['z'][l], d_corr['unlabeled']['z'][l]
+
             m, v = d_clean['unlabeled']['m'].get(l, 0), d_clean['unlabeled']['v'].get(l, 1 - 1e-10)
             if l == L:
                 u =  h_corr #unlabeled(h_corr)
@@ -204,21 +216,19 @@ class VAE(nn.Module):
 
             u = batch_norm(u)
 
-
-            print("m type: " + str(type(m)))
-            print("v type: " + str(type(v)))
-
-
             z_est[l] = self.g_gauss(z_c, u, layer_sizes[l])
-            z_est_bn = (z_est[l].data - m.expand_as(z_est[l])) / v.expand_as(z_est[l])
-            # append the cost of this layer to d_cost
-            #d_cost[l].append(
-                (torch.mean(torch.sum((z_est_bn - z.data) * (z_est_bn - z.data), 1)) / layer_sizes[l]) * denoising_cost[l])
+            z_est_bn = Variable((z_est[l].data - m.expand_as(z_est[l])) / v.expand_as(z_est[l]),requires_grad=False)
+
+            z = z.detach()
+
+            d_cost[l] = torch.nn.functional.binary_cross_entropy(torch.sigmoid(z_est_bn), torch.sigmoid(z))
+
         return d_cost
 
-    def forward(self, x):
-        h_corr,d_corr = self.encoder(x,0) #TODO: add noise
-        h_clean,d_clean = self.encoder(x,0)
+    def forward(self, (x,labeled)):
+
+        h_corr,d_corr = self.encoder(x,0.3,labeled) #TODO: add noise
+        h_clean,d_clean = self.encoder(x,0,labeled)
 
         d_cost = self.decoder(h_clean,h_corr, d_clean,d_corr)
         
@@ -228,8 +238,12 @@ class VAE(nn.Module):
         #for ele in d_cost:
         #    u_cost += ele
         # u_cost = tf.add_n(d_cost)
-        u_cost = sum(d_cost)
+        print('xxxxxxxxx')
+        print("d_cost: " + str(d_cost))
+        u_cost = torch.sum(d_cost)
+        print('xxxxxxxxx')
         print("u_cost: " + str(u_cost))
+        print("u_cost: " + str(u_cost.size()))
 
         #y_N = labeled(y_c)
         #cost = -torch.mean(tf.torch.sum(outputs * torch.log(y_N), 1))  # supervised cost
@@ -237,7 +251,7 @@ class VAE(nn.Module):
         #loss = cost + u_cost  # total cost
 
 
-        return Variable(torch.FloatTensor([u_cost]))
+        return u_cost
 
 model  = VAE()
 
@@ -250,10 +264,21 @@ def train(epoch):
         data, target = Variable(data), Variable(target)
         data = data.view(-1,784) #TODO possible reason of bad accuracy
         optimizer.zero_grad()
-        output = model(data)
+        output = model((data, True))
         loss = output
         loss.backward()
         optimizer.step()
+
+        for batch_idx, (data, target) in enumerate(unlabeled_train_loader):
+            data, target = Variable(data), Variable(target)
+            data = data.view(-1, 784)  # TODO possible reason of bad accuracy
+            optimizer.zero_grad()
+            output = model((data, False))
+            loss = output
+            loss.backward()
+            optimizer.step()
+
+
         if batch_idx % args.log_interval == 0:
             print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
                 epoch, batch_idx * len(data), len(train_loader.dataset),
