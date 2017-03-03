@@ -78,7 +78,7 @@ shapes = zip(layer_sizes[:-1], layer_sizes[1:])  # shapes of linear layers
 
 join = lambda l, u: torch.cat([l, u], 0)
 
-kwargs = {'num_workers': 1, 'pin_memory': True} if args.cuda else {}
+kwargs =  {}
 
 #print(trainset_unlabeled.train_labels.size())
 train_loader = torch.utils.data.DataLoader(trainset_labeled , batch_size=64, shuffle=True, **kwargs)
