@@ -2,9 +2,23 @@
 <project version="4">
   <component name="ChangeListManager">
     <list default="true" id="4e659721-adf2-42e6-b37b-1e5e6973d337" name="Default" comment="">
+      <change type="DELETED" beforePath="$PROJECT_DIR$/data/raw/t10k-images-idx3-ubyte.gz" afterPath="" />
+      <change type="DELETED" beforePath="$PROJECT_DIR$/data/raw/t10k-labels-idx1-ubyte.gz" afterPath="" />
+      <change type="DELETED" beforePath="$PROJECT_DIR$/data/raw/train-images-idx3-ubyte.gz" afterPath="" />
+      <change type="DELETED" beforePath="$PROJECT_DIR$/data/raw/train-labels-idx1-ubyte.gz" afterPath="" />
+      <change type="DELETED" beforePath="$PROJECT_DIR$/script/test.p" afterPath="" />
+      <change type="DELETED" beforePath="$PROJECT_DIR$/script/train_labeled.p" afterPath="" />
+      <change type="DELETED" beforePath="$PROJECT_DIR$/script/validation.p" afterPath="" />
+      <change type="DELETED" beforePath="$PROJECT_DIR$/torch.ipynb" afterPath="" />
+      <change type="DELETED" beforePath="$PROJECT_DIR$/train_labeled_small.p" afterPath="" />
+      <change type="DELETED" beforePath="$PROJECT_DIR$/train_unlabeled_small.p" afterPath="" />
+      <change type="DELETED" beforePath="$PROJECT_DIR$/validation_small.p" afterPath="" />
       <change type="MODIFICATION" beforePath="$PROJECT_DIR$/ladder" afterPath="$PROJECT_DIR$/ladder" />
+      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/script/data/processed/test.pt" afterPath="$PROJECT_DIR$/script/data/processed/test.pt" />
+      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/script/data/processed/training.pt" afterPath="$PROJECT_DIR$/script/data/processed/training.pt" />
+      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/test.p" afterPath="$PROJECT_DIR$/test.p" />
+      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/.idea/workspace.xml" afterPath="$PROJECT_DIR$/.idea/workspace.xml" />
       <change type="MODIFICATION" beforePath="$PROJECT_DIR$/ladder_impl.py" afterPath="$PROJECT_DIR$/ladder_impl.py" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/sub.py" afterPath="$PROJECT_DIR$/sub.py" />
     </list>
     <option name="EXCLUDED_CONVERTED_TO_IGNORED" value="true" />
     <option name="TRACKING_ENABLED" value="true" />
@@ -31,11 +45,21 @@
           </provider>
         </entry>
       </file>
-      <file leaf-file-name="ladder_impl.py" pinned="false" current-in-tab="false">
+      <file leaf-file-name="ladder_impl.py" pinned="false" current-in-tab="true">
         <entry file="file://$PROJECT_DIR$/ladder_impl.py">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="702">
-              <caret line="59" column="54" lean-forward="false" selection-start-line="59" selection-start-column="54" selection-end-line="59" selection-end-column="54" />
+            <state relative-caret-position="0">
+              <caret line="0" column="28" lean-forward="false" selection-start-line="0" selection-start-column="23" selection-end-line="0" selection-end-column="28" />
+              <folding />
+            </state>
+          </provider>
+        </entry>
+      </file>
+      <file leaf-file-name="jake.py" pinned="false" current-in-tab="false">
+        <entry file="file://$PROJECT_DIR$/jake.py">
+          <provider selected="true" editor-type-id="text-editor">
+            <state relative-caret-position="447">
+              <caret line="98" column="29" lean-forward="false" selection-start-line="98" selection-start-column="29" selection-end-line="98" selection-end-column="29" />
               <folding>
                 <element signature="e#0#37#0" expanded="true" />
               </folding>
@@ -53,11 +77,11 @@
           </provider>
         </entry>
       </file>
-      <file leaf-file-name="sub.py" pinned="false" current-in-tab="true">
+      <file leaf-file-name="sub.py" pinned="false" current-in-tab="false">
         <entry file="file://$PROJECT_DIR$/sub.py">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="576">
-              <caret line="32" column="0" lean-forward="true" selection-start-line="32" selection-start-column="0" selection-end-line="32" selection-end-column="0" />
+            <state relative-caret-position="432">
+              <caret line="24" column="37" lean-forward="false" selection-start-line="24" selection-start-column="37" selection-end-line="24" selection-end-column="37" />
               <folding>
                 <element signature="e#0#37#0" expanded="true" />
               </folding>
@@ -87,6 +111,7 @@
       <find>g_ga</find>
       <find>reconstruction_function</find>
       <find>data</find>
+      <find>print</find>
     </findStrings>
   </component>
   <component name="Git.Settings">
@@ -100,8 +125,9 @@
         <option value="$PROJECT_DIR$/ladder.py" />
         <option value="$PROJECT_DIR$/input_data.py" />
         <option value="$PROJECT_DIR$/sd" />
-        <option value="$PROJECT_DIR$/ladder_impl.py" />
         <option value="$PROJECT_DIR$/sub.py" />
+        <option value="$PROJECT_DIR$/jake.py" />
+        <option value="$PROJECT_DIR$/ladder_impl.py" />
       </list>
     </option>
   </component>
@@ -341,9 +367,7 @@
       <provider selected="true" editor-type-id="text-editor">
         <state relative-caret-position="0">
           <caret line="0" column="0" lean-forward="false" selection-start-line="0" selection-start-column="0" selection-end-line="0" selection-end-column="0" />
-          <folding>
-            <element signature="e#0#37#0" expanded="true" />
-          </folding>
+          <folding />
         </state>
       </provider>
     </entry>
@@ -432,23 +456,31 @@
         </state>
       </provider>
     </entry>
-    <entry file="file://$PROJECT_DIR$/ladder_impl.py">
+    <entry file="file://$PROJECT_DIR$/sub.py">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="702">
-          <caret line="59" column="54" lean-forward="false" selection-start-line="59" selection-start-column="54" selection-end-line="59" selection-end-column="54" />
+        <state relative-caret-position="432">
+          <caret line="24" column="37" lean-forward="false" selection-start-line="24" selection-start-column="37" selection-end-line="24" selection-end-column="37" />
           <folding>
             <element signature="e#0#37#0" expanded="true" />
           </folding>
         </state>
       </provider>
     </entry>
-    <entry file="file://$PROJECT_DIR$/sub.py">
+    <entry file="file://$PROJECT_DIR$/jake.py">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="576">
-          <caret line="32" column="0" lean-forward="true" selection-start-line="32" selection-start-column="0" selection-end-line="32" selection-end-column="0" />
+        <state relative-caret-position="447">
+          <caret line="98" column="29" lean-forward="false" selection-start-line="98" selection-start-column="29" selection-end-line="98" selection-end-column="29" />
           <folding>
             <element signature="e#0#37#0" expanded="true" />
           </folding>
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/ladder_impl.py">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="0">
+          <caret line="0" column="28" lean-forward="false" selection-start-line="0" selection-start-column="23" selection-end-line="0" selection-end-column="28" />
+          <folding />
         </state>
       </provider>
     </entry>
