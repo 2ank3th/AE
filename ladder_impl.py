@@ -42,7 +42,6 @@ parser.add_argument('--seed', type=int, default=1, metavar='S',
 parser.add_argument('--log-interval', type=int, default=10, metavar='N',
                     help='how many batches to wait before logging training status')
 args = parser.parse_args()
-args.cuda = not args.no_cuda and torch.cuda.is_available()
 
 
 # hyperparameters that denote the importance of each layer
@@ -50,8 +49,6 @@ denoising_cost = [1000.0, 10.0, 0.10, 0.10, 0.10, 0.10, 0.10]
 
 
 torch.manual_seed(args.seed)
-if args.cuda:
-    torch.cuda.manual_seed(args.seed)
 
 
 print('loading data!')
