@@ -89,7 +89,7 @@ split_lu = lambda x: (x, x ) #TODO split input
 kwargs = {'num_workers': 1, 'pin_memory': True} if args.cuda else {}
 
 print(trainset_labeled.train_data.size())
-train_loader = torch.utils.data.DataLoader(trainset_labeled, batch_size=101, shuffle=True, **kwargs)
+train_loader = torch.utils.data.DataLoader(trainset_labeled, batch_size=64, shuffle=True, **kwargs)
 #valid_loader = torch.utils.data.DataLoader(validset, batch_size=64, shuffle=True)
 
 
@@ -107,7 +107,7 @@ class VAE(nn.Module):
     def g_gauss(self,z_c, u, size):
         print("sizze" + str(size))
         "gaussian denoising function proposed in the original paper"
-        wi = lambda inits, name: Variable(inits * torch.ones(1,size))
+        wi = lambda inits, name: Variable( torch.ones(1,size).expand(u.size()[0],size)) #TODO possible reason of bad accuracy
         # wi = lambda inits, name: tf.Variable(inits * tf.ones([size]), name=name)
         a1 = wi(0., 'a1')
         a2 = wi(1., 'a2')
@@ -123,7 +123,7 @@ class VAE(nn.Module):
 
         print("u" + str(u.size()))
         print("a2" + str(a2.size()))
-        temp1 = torch.mm(a2 , u)
+        temp1 = a2 * u
         temp2 = temp1 + a3
         temp3 = a4 * u
 
@@ -187,7 +187,7 @@ class VAE(nn.Module):
         # Decoder
         z_est = {}
         d_cost = []  # to store the denoising cost of all layers
-        for l in range(L, -1, -1):
+        for l in range(L, 0, -1): #TODO: last layer not run
             print ("Layer ", l, ": ", layer_sizes[l + 1] if l + 1 < len(layer_sizes) else None, " -> ", layer_sizes[
                 l], ", denoising cost: ", denoising_cost[l])
             z, z_c = d_clean['unlabeled']['z'][l], d_corr['unlabeled']['z'][l]
@@ -195,18 +195,23 @@ class VAE(nn.Module):
             if l == L:
                 u =  h_corr #unlabeled(h_corr)
             else:
-                u = torch.matmul(z_est[l + 1], self.weights['V'][l])
+                u = torch.mm(z_est[l + 1], self.weights['V'][l])
                 # u = tf.matmul(z_est[l+1], weights['V'][l])
 
             batch_norm = torch.nn.BatchNorm1d(u.size()[1])
 
             u = batch_norm(u)
 
+
+            print("m type: " + str(type(m)))
+            print("v type: " + str(type(v)))
+
+
             z_est[l] = self.g_gauss(z_c, u, layer_sizes[l])
-            z_est_bn = (z_est[l] - m) / v
+            z_est_bn = (z_est[l].data - m.expand_as(z_est[l])) / v.expand_as(z_est[l])
             # append the cost of this layer to d_cost
             d_cost.append(
-                (torch.mean(torch.sum((z_est_bn - z) * (z_est_bn - z), 1)) / layer_sizes[l]) * denoising_cost[l])
+                (torch.mean(torch.sum((z_est_bn - z.data) * (z_est_bn - z.data), 1)) / layer_sizes[l]) * denoising_cost[l])
             # d_cost.append((tf.reduce_mean(tf.reduce_sum(tf.square(z_est_bn - z), 1)) / layer_sizes[l]) * denoising_cost[l])
         return d_cost
 
@@ -217,10 +222,13 @@ class VAE(nn.Module):
         d_cost = self.decoder(h_clean,h_corr, d_clean,d_corr)
 
         # calculate total unsupervised cost by adding the denoising cost of all layers
-        u_cost = torch.zeros(torch.size(d_cost[0]))
-        for ele in d_cost:
-            u_cost += ele
+        #u_cost = torch.zeros(torch.size(d_cost[0]))
+
+        #for ele in d_cost:
+        #    u_cost += ele
         # u_cost = tf.add_n(d_cost)
+        u_cost = sum(d_cost)
+        print("u_cost: " + str(u_cost))
 
         y_N = labeled(y_c)
         cost = -torch.mean(tf.torch.sum(outputs * torch.log(y_N), 1))  # supervised cost
