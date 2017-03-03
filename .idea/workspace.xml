@@ -3,8 +3,8 @@
   <component name="ChangeListManager">
     <list default="true" id="4e659721-adf2-42e6-b37b-1e5e6973d337" name="Default" comment="">
       <change type="MODIFICATION" beforePath="$PROJECT_DIR$/ladder" afterPath="$PROJECT_DIR$/ladder" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/.idea/workspace.xml" afterPath="$PROJECT_DIR$/.idea/workspace.xml" />
       <change type="MODIFICATION" beforePath="$PROJECT_DIR$/ladder_impl.py" afterPath="$PROJECT_DIR$/ladder_impl.py" />
+      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/sub.py" afterPath="$PROJECT_DIR$/sub.py" />
     </list>
     <option name="EXCLUDED_CONVERTED_TO_IGNORED" value="true" />
     <option name="TRACKING_ENABLED" value="true" />
@@ -31,11 +31,11 @@
           </provider>
         </entry>
       </file>
-      <file leaf-file-name="ladder_impl.py" pinned="false" current-in-tab="true">
+      <file leaf-file-name="ladder_impl.py" pinned="false" current-in-tab="false">
         <entry file="file://$PROJECT_DIR$/ladder_impl.py">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="456">
-              <caret line="150" column="25" lean-forward="false" selection-start-line="150" selection-start-column="25" selection-end-line="150" selection-end-column="58" />
+            <state relative-caret-position="702">
+              <caret line="59" column="54" lean-forward="false" selection-start-line="59" selection-start-column="54" selection-end-line="59" selection-end-column="54" />
               <folding>
                 <element signature="e#0#37#0" expanded="true" />
               </folding>
@@ -53,7 +53,7 @@
           </provider>
         </entry>
       </file>
-      <file leaf-file-name="sub.py" pinned="false" current-in-tab="false">
+      <file leaf-file-name="sub.py" pinned="false" current-in-tab="true">
         <entry file="file://$PROJECT_DIR$/sub.py">
           <provider selected="true" editor-type-id="text-editor">
             <state relative-caret-position="576">
@@ -86,6 +86,7 @@
       <find>beta</find>
       <find>g_ga</find>
       <find>reconstruction_function</find>
+      <find>data</find>
     </findStrings>
   </component>
   <component name="Git.Settings">
@@ -98,9 +99,9 @@
         <option value="$PROJECT_DIR$/example.py" />
         <option value="$PROJECT_DIR$/ladder.py" />
         <option value="$PROJECT_DIR$/input_data.py" />
-        <option value="$PROJECT_DIR$/sub.py" />
         <option value="$PROJECT_DIR$/sd" />
         <option value="$PROJECT_DIR$/ladder_impl.py" />
+        <option value="$PROJECT_DIR$/sub.py" />
       </list>
     </option>
   </component>
@@ -421,16 +422,6 @@
         </state>
       </provider>
     </entry>
-    <entry file="file://$PROJECT_DIR$/sub.py">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="576">
-          <caret line="32" column="0" lean-forward="true" selection-start-line="32" selection-start-column="0" selection-end-line="32" selection-end-column="0" />
-          <folding>
-            <element signature="e#0#37#0" expanded="true" />
-          </folding>
-        </state>
-      </provider>
-    </entry>
     <entry file="file://$PROJECT_DIR$/ladder.py">
       <provider selected="true" editor-type-id="text-editor">
         <state relative-caret-position="18">
@@ -443,8 +434,18 @@
     </entry>
     <entry file="file://$PROJECT_DIR$/ladder_impl.py">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="456">
-          <caret line="150" column="25" lean-forward="false" selection-start-line="150" selection-start-column="25" selection-end-line="150" selection-end-column="58" />
+        <state relative-caret-position="702">
+          <caret line="59" column="54" lean-forward="false" selection-start-line="59" selection-start-column="54" selection-end-line="59" selection-end-column="54" />
+          <folding>
+            <element signature="e#0#37#0" expanded="true" />
+          </folding>
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/sub.py">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="576">
+          <caret line="32" column="0" lean-forward="true" selection-start-line="32" selection-start-column="0" selection-end-line="32" selection-end-column="0" />
           <folding>
             <element signature="e#0#37#0" expanded="true" />
           </folding>

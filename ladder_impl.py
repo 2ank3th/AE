@@ -57,7 +57,7 @@ if args.cuda:
 print('loading data!')
 trainset_labeled = pickle.load(open("train_labeled.p", "rb"))
 #validset = pickle.load(open("validation.p", "rb"))
-trainset_unlabeled = pickle.load(open("train_unlabeled_small.p", "rb"))
+trainset_unlabeled = pickle.load(open("train_unlabeled.p", "rb"))
 
 def bi(layer, size, name,obj):
     #temp = torch.randn(size).type(dtype)
@@ -137,36 +137,35 @@ class VAE(nn.Module):
         # mu = a1 * tf.sigmoid(a2 * u + a3) + a4 * u + a5
         # v = a6 * tf.sigmoid(a7 * u + a8) + a9 * u + a10
 
-        print(mu)
-        print(v)
-        print(z_c)
         z_est = (z_c - mu) * v + mu
         return z_est
 
 
     def encoder(self,inputs, noise_std, labeled):
-        h = Variable(inputs.data + torch.mul(torch.randn(inputs.size()),noise_std),requires_grad = False)
+        h = inputs + Variable(torch.mul(torch.randn(inputs.size()),noise_std))
 
-        d = {}
-        d['labeled'] = {'z': {}, 'm': {}, 'v': {}, 'h': {}}
-        d['unlabeled'] = {'z': {}, 'm': {}, 'v': {}, 'h': {}}
+        d = {'z': {}, 'm': {}, 'v': {}, 'h': {}}
 
-        d['labeled']['z'][0], d['unlabeled']['z'][0] = self.split_input(h,labeled)
+        d['z'][0] = h
 
         for l in xrange(1,L+1):
 
             print("Layer " + str(l)+ ": "+ str(layer_sizes[l - 1])+ " -> "+ str(layer_sizes[l]))
 
-            d['labeled']['h'][l - 1], d['unlabeled']['h'][l - 1] = self.split_input(h,labeled)
+            d['h'][l - 1] = h
 
             
             z_pre = torch.mm(h, self.weights['W'][l - 1])  # pre-activation
 
             z_pre_l, z_pre_u = self.split_input(z_pre,labeled)  # split labeled and unlabeled examples
 
-            if not labeled:
-                m, v = torch.mean(z_pre_u.data, 1), torch.var(z_pre_u.data, 1)
-                d['unlabeled']['m'][l], d['unlabeled']['v'][l] = m, v  # save mean and variance of unlabeled examples for decoding
+            #TODO why only for unlabbeled if not labeled:
+            m, v = torch.mean(z_pre_u, 1), torch.var(z_pre_u, 1)
+
+            print("Mean : "+ str(m))
+            print("Var : " + str(v))
+
+            d['m'][l], d['v'][l] = m, v  # save mean and variance of unlabeled examples for decoding
 
             batch_norm = torch.nn.BatchNorm1d(z_pre.size()[1])
          
@@ -185,11 +184,10 @@ class VAE(nn.Module):
 
                 h = relU(z) #TODO + self.weights["beta"][l - 1])
 
-            d['labeled']['z'][l], d['unlabeled']['z'][l] = self.split_input(z,labeled)
+            d['z'][l] = z
 
 
-
-        d['labeled']['h'][l], d['unlabeled']['h'][l] = self.split_input(h,labeled)
+        d['h'][l] = self.split_input(h,labeled)
 
         return h, d
 
@@ -203,9 +201,10 @@ class VAE(nn.Module):
             print ("Layer ", l, ": ", layer_sizes[l + 1] if l + 1 < len(layer_sizes) else None, " -> ", layer_sizes[
                 l], ", denoising cost: ", denoising_cost[l])
 
-            z, z_c = d_clean['unlabeled']['z'][l], d_corr['unlabeled']['z'][l]
+            z, z_c = d_clean['z'][l], d_corr['z'][l]
 
-            m, v = d_clean['unlabeled']['m'].get(l, 0), d_clean['unlabeled']['v'].get(l, 1 - 1e-10)
+            m, v = d_clean['m'].get(l, 0), d_clean['v'].get(l, 1 - 1e-10)
+
             if l == L:
                 u =  h_corr #unlabeled(h_corr)
             else:
@@ -215,9 +214,10 @@ class VAE(nn.Module):
             batch_norm = torch.nn.BatchNorm1d(u.size()[1])
 
             u = batch_norm(u)
+            print(m)
 
             z_est[l] = self.g_gauss(z_c, u, layer_sizes[l])
-            z_est_bn = Variable((z_est[l].data - m.expand_as(z_est[l])) / v.expand_as(z_est[l]),requires_grad=False)
+            z_est_bn = (z_est[l] - m.expand_as(z_est[l])) / v.expand_as(z_est[l])
 
             z = z.detach()
 
@@ -264,8 +264,7 @@ def train(epoch):
         data, target = Variable(data), Variable(target)
         data = data.view(-1,784) #TODO possible reason of bad accuracy
         optimizer.zero_grad()
-        output = model((data, True))
-        loss = output
+        loss = model((data, True))
         loss.backward()
         optimizer.step()
 
@@ -273,8 +272,7 @@ def train(epoch):
             data, target = Variable(data), Variable(target)
             data = data.view(-1, 784)  # TODO possible reason of bad accuracy
             optimizer.zero_grad()
-            output = model((data, False))
-            loss = output
+            loss = model((data, False))
             loss.backward()
             optimizer.step()
 
