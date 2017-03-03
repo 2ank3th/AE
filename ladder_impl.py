@@ -104,9 +104,10 @@ class VAE(nn.Module):
            # batch normalization parameter to scale the normalized value
            'gamma': [bi(1.0, layer_sizes[l+1], "beta",self) for l in range(L)]}
 
-    def g_gauss(z_c, u, size):
+    def g_gauss(self,z_c, u, size):
+        print("sizze" + str(size))
         "gaussian denoising function proposed in the original paper"
-        wi = lambda inits, name: torch.Variable(inits * torch.ones([size]), name=name)
+        wi = lambda inits, name: Variable(inits * torch.ones(1,size))
         # wi = lambda inits, name: tf.Variable(inits * tf.ones([size]), name=name)
         a1 = wi(0., 'a1')
         a2 = wi(1., 'a2')
@@ -120,8 +121,14 @@ class VAE(nn.Module):
         a9 = wi(0., 'a9')
         a10 = wi(0., 'a10')
 
-        mu = a1 * torch.nn.sigmoid(a2 * u + a3) + a4 * u + a5
-        v = a6 * torch.nn.sigmoid(a7 * u + a8) + a9 * u + a10
+        print("u" + str(u.size()))
+        print("a2" + str(a2.size()))
+        temp1 = torch.mm(a2 , u)
+        temp2 = temp1 + a3
+        temp3 = a4 * u
+
+        mu = a1 * nn.functional.sigmoid(temp2) + temp3 + a5
+        v = a6 * nn.functional.sigmoid(a7 * u + a8) + a9 * u + a10
         # mu = a1 * tf.sigmoid(a2 * u + a3) + a4 * u + a5
         # v = a6 * tf.sigmoid(a7 * u + a8) + a9 * u + a10
 
@@ -159,15 +166,16 @@ class VAE(nn.Module):
                 # use softmax activation in output layer
                 softmax = torch.nn.Softmax()
 
-                h = softmax(self.weights['gamma'][l - 1] * (z + self.weights["beta"][l - 1]))
+                h = softmax(z)
+                #TODO h = softmax(self.weights['gamma'][l - 1] * (z + self.weights["beta"][l - 1]))
             else:
                 # use ReLU activation in hidden layers
                 relU = torch.nn.ReLU()
-                
+
                 print("z: " + str(z.size()))
                 print("beta weight: " + str(self.weights["beta"][l - 1].size()))
         
-                h = relU(z + self.weights["beta"][l - 1])
+                h = relU(z) #TODO + self.weights["beta"][l - 1])
                 print("h size in hidden layer: " + str(h.size()))
             d['labeled']['z'][l], d['unlabeled']['z'][l] = split_lu(z)
             d['unlabeled']['m'][l], d['unlabeled']['v'][l] = m, v  # save mean and variance of unlabeled examples for decoding
@@ -175,22 +183,22 @@ class VAE(nn.Module):
         return h, d
 
 
-    def decoder(self,y_clean,y_corr,  clean, corr):
+    def decoder(self,h_clean,h_corr,  d_clean, d_corr):
         # Decoder
         z_est = {}
         d_cost = []  # to store the denoising cost of all layers
         for l in range(L, -1, -1):
             print ("Layer ", l, ": ", layer_sizes[l + 1] if l + 1 < len(layer_sizes) else None, " -> ", layer_sizes[
                 l], ", denoising cost: ", denoising_cost[l])
-            z, z_c = clean['unlabeled']['z'][l], corr['unlabeled']['z'][l]
-            m, v = clean['unlabeled']['m'].get(l, 0), clean['unlabeled']['v'].get(l, 1 - 1e-10)
+            z, z_c = d_clean['unlabeled']['z'][l], d_corr['unlabeled']['z'][l]
+            m, v = d_clean['unlabeled']['m'].get(l, 0), d_clean['unlabeled']['v'].get(l, 1 - 1e-10)
             if l == L:
-                u = unlabeled(y_corr)
+                u =  h_corr #unlabeled(h_corr)
             else:
                 u = torch.matmul(z_est[l + 1], self.weights['V'][l])
                 # u = tf.matmul(z_est[l+1], weights['V'][l])
 
-            batch_norm = torch.nn.BatchNorm2d(64*u.size[0]*u.size[1])
+            batch_norm = torch.nn.BatchNorm1d(u.size()[1])
 
             u = batch_norm(u)
 
@@ -203,10 +211,10 @@ class VAE(nn.Module):
         return d_cost
 
     def forward(self, x):
-        h1,d1 = self.encoder(x,0) #TODO: add noise
-        h2, d2 = self.encoder(x,0)
+        h_corr,d_corr = self.encoder(x,0) #TODO: add noise
+        h_clean,d_clean = self.encoder(x,0)
 
-        d_cost = self.decoder(h1, d1)
+        d_cost = self.decoder(h_clean,h_corr, d_clean,d_corr)
 
         # calculate total unsupervised cost by adding the denoising cost of all layers
         u_cost = torch.zeros(torch.size(d_cost[0]))
