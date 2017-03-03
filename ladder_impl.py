@@ -92,6 +92,8 @@ print(trainset_labeled.train_data.size())
 train_loader = torch.utils.data.DataLoader(trainset_labeled, batch_size=64, shuffle=True, **kwargs)
 #valid_loader = torch.utils.data.DataLoader(validset, batch_size=64, shuffle=True)
 
+reconstruction_function = nn.BCELoss()
+reconstruction_function.size_average = False
 
 class VAE(nn.Module):
     def __init__(self):
@@ -107,7 +109,7 @@ class VAE(nn.Module):
     def g_gauss(self,z_c, u, size):
         print("sizze" + str(size))
         "gaussian denoising function proposed in the original paper"
-        wi = lambda inits, name: Variable( torch.ones(1,size).expand(u.size()[0],size)) #TODO possible reason of bad accuracy
+        wi = lambda inits, name: Variable( torch.ones(1,size).expand(u.size()[0],size), requires_grad = True) #TODO possible reason of bad accuracy
         # wi = lambda inits, name: tf.Variable(inits * tf.ones([size]), name=name)
         a1 = wi(0., 'a1')
         a2 = wi(1., 'a2')
@@ -186,7 +188,7 @@ class VAE(nn.Module):
     def decoder(self,h_clean,h_corr,  d_clean, d_corr):
         # Decoder
         z_est = {}
-        d_cost = []  # to store the denoising cost of all layers
+        d_cost = Variable(torch.FloatTensor(L))  # to store the denoising cost of all layers
         for l in range(L, 0, -1): #TODO: last layer not run
             print ("Layer ", l, ": ", layer_sizes[l + 1] if l + 1 < len(layer_sizes) else None, " -> ", layer_sizes[
                 l], ", denoising cost: ", denoising_cost[l])
@@ -210,9 +212,8 @@ class VAE(nn.Module):
             z_est[l] = self.g_gauss(z_c, u, layer_sizes[l])
             z_est_bn = (z_est[l].data - m.expand_as(z_est[l])) / v.expand_as(z_est[l])
             # append the cost of this layer to d_cost
-            d_cost.append(
+            #d_cost[l].append(
                 (torch.mean(torch.sum((z_est_bn - z.data) * (z_est_bn - z.data), 1)) / layer_sizes[l]) * denoising_cost[l])
-            # d_cost.append((tf.reduce_mean(tf.reduce_sum(tf.square(z_est_bn - z), 1)) / layer_sizes[l]) * denoising_cost[l])
         return d_cost
 
     def forward(self, x):
@@ -220,7 +221,7 @@ class VAE(nn.Module):
         h_clean,d_clean = self.encoder(x,0)
 
         d_cost = self.decoder(h_clean,h_corr, d_clean,d_corr)
-
+        
         # calculate total unsupervised cost by adding the denoising cost of all layers
         #u_cost = torch.zeros(torch.size(d_cost[0]))
 
@@ -230,17 +231,18 @@ class VAE(nn.Module):
         u_cost = sum(d_cost)
         print("u_cost: " + str(u_cost))
 
-        y_N = labeled(y_c)
-        cost = -torch.mean(tf.torch.sum(outputs * torch.log(y_N), 1))  # supervised cost
+        #y_N = labeled(y_c)
+        #cost = -torch.mean(tf.torch.sum(outputs * torch.log(y_N), 1))  # supervised cost
         # cost = -tf.reduce_mean(tf.reduce_sum(outputs*tf.log(y_N), 1))  # supervised cost
-        loss = cost + u_cost  # total cost
+        #loss = cost + u_cost  # total cost
 
 
-        return
+        return Variable(torch.FloatTensor([u_cost]))
 
 model  = VAE()
 
 optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum) #TODO: change to something
+
 
 def train(epoch):
     model.train()
@@ -249,7 +251,7 @@ def train(epoch):
         data = data.view(-1,784) #TODO possible reason of bad accuracy
         optimizer.zero_grad()
         output = model(data)
-        loss = F.nll_loss(output, target)
+        loss = output
         loss.backward()
         optimizer.step()
         if batch_idx % args.log_interval == 0:
