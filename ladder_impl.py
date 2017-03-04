@@ -147,53 +147,87 @@ class VAE(nn.Module):
         v = torch.var(input)
 
         ans = ((input - m.data[0]) / math.sqrt(v.data[0] + 1e-10)) + 0.3
-        return ((input - m.data[0]) / math.sqrt(v.data[0] + 1e-10)) + 0.3
+        return (((input - m.data[0]) / math.sqrt(v.data[0] + 1e-10)) + 0.3),m,v
 
-    def encoder(self,inputs, noise_std, labeled):
-        temp = Variable(torch.mul(torch.randn(inputs.size()),noise_std))
-        h = inputs + temp
+    def encoder_clean(self,h, noise_std, labeled):
+        d = {'z': {}, 'm': {}, 'v': {}, 'h': {}}
+        d['z'][0] = h
+        d['z'][0] = h
+
+        for l in xrange(1, L+1):
+            # post activation from previos layer
+            h_l_prev = d['h'][l - 1]
+
+            # pre-activation and batch normalization
+            z_pre = torch.mm(h_l_prev, self.weights['W'][l - 1])
+
+            m_l = torch.mean(z_pre)
+            v_l = torch.var(z_pre)
+
+            z_l,m_l, v_l = self.batch_norm(z_pre)
+
+            if l == L:
+            # use softmax activation in output layer
+                softmax = torch.nn.Softmax()
+                h = softmax(z)
+            # TODO h = softmax(self.weights['gamma'][l - 1] * (z + self.weights["beta"][l - 1]))
+            else:
+                # use ReLU activation in hidden layers
+                relU = torch.nn.ReLU()
+
+                h_l = relU(z_l)  # TODO + self.weights["beta"][l - 1])
+
+                d['z'][l] = z_l
+                d['h'][l] = h_l
+
+        return d['h'][L],d
+
+
+    def encoder_noise(self,inputs, noise_std, labeled):
+        noise = Variable(torch.mul(torch.randn(inputs.size()),noise_std))
+        h = inputs + noise
 
         d = {'z': {}, 'm': {}, 'v': {}, 'h': {}}
 
+        d['z'][0] = h
         d['z'][0] = h
 
         for l in xrange(1,L+1):
 
             #print("Layer " + str(l)+ ": "+ str(layer_sizes[l - 1])+ " -> "+ str(layer_sizes[l]))
 
-            d['h'][l - 1] = h
+            #post activation from previos layer
+            h_l_prev = d['h'][l - 1]
 
-            z_pre = torch.mm(h, self.weights['W'][l - 1])  # pre-activation
+            z_pre = torch.mm(h_l_prev, self.weights['W'][l - 1])  # pre-activation and batch normalization
 
-            z_pre_l, z_pre_u = self.split_input(z_pre,labeled)  # split labeled and unlabeled examples
+            #z_pre_l, z_pre_u = self.split_input(z_pre,labeled)  # split labeled and unlabeled examples
 
-            if noise_std == 0:
-                m, v = torch.mean(z_pre_u.data), torch.var(z_pre_u.data)
-                d['m'][l], d['v'][l] = m, v  # save mean and variance of unlabeled examples for decoding
+            #if noise_std == 0:
+            #    m, v = torch.mean(z_pre_u.data), torch.var(z_pre_u.data)
+            #    d['m'][l], d['v'][l] = m, v  # save mean and variance of unlabeled examples for decoding
 
             #batch_norm = torch.nn.BatchNorm1d(z_pre.size()[1])
 
-            z = self.batch_norm(z_pre)
+            z_l,_,_  = self.batch_norm(z_pre)
             #TODO: BN for test is different
 
-            if l == L:
+            #if l == L:
                 # use softmax activation in output layer
-                softmax = torch.nn.Softmax()
+                #softmax = torch.nn.Softmax()
 
-                h = softmax(z)
+                #h = softmax(z)
                 #TODO h = softmax(self.weights['gamma'][l - 1] * (z + self.weights["beta"][l - 1]))
-            else:
+            #else:
                 # use ReLU activation in hidden layers
-                relU = torch.nn.ReLU()
+            relU = torch.nn.ReLU()
 
-                h = relU(z) #TODO + self.weights["beta"][l - 1])
+            h_l = relU(z_l) #TODO + self.weights["beta"][l - 1])
 
-            d['z'][l] = z
+            d['z'][l] = z_l
+            d['h'][l] = h_l
 
-
-        d['h'][l] = self.split_input(h,labeled)
-
-        return h, d
+        return d['h'][L], d
 
 
     def decoder(self,h_clean,h_corr,  d_clean, d_corr):
