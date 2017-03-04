@@ -84,11 +84,9 @@ shapes = zip(layer_sizes[:-1], layer_sizes[1:])  # shapes of linear layers
 
 join = lambda l, u: torch.cat([l, u], 0)
 
-kwargs =  {}
-
 #print(trainset_unlabeled.train_labels.size())
-train_loader = torch.utils.data.DataLoader(trainset_labeled , batch_size=64, shuffle=True, **kwargs)
-unlabeled_train_loader = torch.utils.data.DataLoader( trainset_unlabeled, batch_size=64, shuffle=True, **kwargs)
+train_loader = torch.utils.data.DataLoader(trainset_labeled , batch_size=64, shuffle=True)
+unlabeled_train_loader = torch.utils.data.DataLoader( trainset_unlabeled, batch_size=64, shuffle=True)
 
 #valid_loader = torch.utils.data.DataLoader(validset, batch_size=64, shuffle=True)
 
@@ -139,6 +137,12 @@ class VAE(nn.Module):
         z_est = (z_c - mu) * v + mu
         return z_est
 
+    def batch_norm(self, input):
+        m = torch.mean(input)
+        v = torch.var(input)
+
+        ans = ((input - m.data[0]) / math.sqrt(v.data[0] + 1e-10)) + 0.3
+        return ((input - m.data[0]) / math.sqrt(v.data[0] + 1e-10)) + 0.3
 
     def encoder(self,inputs, noise_std, labeled):
         h = inputs + Variable(torch.mul(torch.randn(inputs.size()),noise_std))
@@ -163,9 +167,9 @@ class VAE(nn.Module):
 
             d['m'][l], d['v'][l] = m, v  # save mean and variance of unlabeled examples for decoding
 
-            batch_norm = torch.nn.BatchNorm1d(z_pre.size()[1])
-         
-            z = batch_norm(z_pre)
+            #batch_norm = torch.nn.BatchNorm1d(z_pre.size()[1])
+
+            z = self.batch_norm(z_pre)
             #TODO: BN for test is different
 
             if l == L:
@@ -206,9 +210,9 @@ class VAE(nn.Module):
                 u = torch.mm(z_est[l + 1], self.weights['V'][l])
                 # u = tf.matmul(z_est[l+1], weights['V'][l])
 
-            batch_norm = torch.nn.BatchNorm1d(u.size()[1])
+            #batch_norm = torch.nn.BatchNorm1d(u.size()[1])
 
-            u = batch_norm(u)
+            u = self.batch_norm(u)
 
             z_est[l] = self.g_gauss(z_c, u, layer_sizes[l],l)
             z_est_bn = (z_est[l] - m) / v
