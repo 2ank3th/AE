@@ -29,9 +29,9 @@ parser.add_argument('--batch-size', type=int, default=64, metavar='N',
                     help='input batch size for training (default: 64)')
 parser.add_argument('--test-batch-size', type=int, default=1000, metavar='N',
                     help='input batch size for testing (default: 1000)')
-parser.add_argument('--epochs', type=int, default=100g, metavar='N',
+parser.add_argument('--epochs', type=int, default=100, metavar='N',
                     help='number of epochs to train (default: 10)')
-parser.add_argument('--lr', type=float, default=0.01, metavar='LR',
+parser.add_argument('--lr', type=float, default=0.10, metavar='LR',
                     help='learning rate (default: 0.01)')
 parser.add_argument('--momentum', type=float, default=0.5, metavar='M',
                     help='SGD momentum (default: 0.5)')
@@ -73,6 +73,12 @@ def wi(layer,shape, name,obj):
     #return Variable(torch.randn(shape[0],shape[1])) / math.sqrt(shape[0])
     return para
 
+def ai(size,obj, name,u):
+    para = nn.Parameter(torch.ones(1, size), requires_grad=True)
+    obj.register_parameter(name,para)
+    return para
+
+
 shapes = zip(layer_sizes[:-1], layer_sizes[1:])  # shapes of linear layers
 
 
@@ -99,6 +105,7 @@ class VAE(nn.Module):
            'beta': [bi(l, layer_sizes[l+1], "beta",self) for l in range(L)],
            # batch normalization parameter to scale the normalized value
            'gamma': [bi(l, layer_sizes[l+1], "beta",self) for l in range(L)]}
+        self.ai = {}
 
     def split_input(self, h, labeled):
         if labeled:
@@ -106,31 +113,28 @@ class VAE(nn.Module):
         else:
             return None, h
 
-    def g_gauss(self,z_c, u, size):
+    def g_gauss(self,z_c, u, size,layer):
         "gaussian denoising function proposed in the original paper"
-        wi = lambda inits, name: Variable( torch.ones(1,size).expand(u.size()[0],size), requires_grad = True) #TODO possible reason of bad accuracy
-        # wi = lambda inits, name: tf.Variable(inits * tf.ones([size]), name=name)
-        a1 = wi(0., 'a1')
-        a2 = wi(1., 'a2')
-        a3 = wi(0., 'a3')
-        a4 = wi(0., 'a4')
-        a5 = wi(0., 'a5')
+        if not layer in self.ai:
+            self.ai[layer] = {}
+            #TODO : when to reinitialize
+            self.ai[layer][1] = ai(size,self,"a1",u)
+            self.ai[layer][2] = ai(size,self,"a2",u)
+            self.ai[layer][3] = ai(size, self, "a3",u)
+            self.ai[layer][4] = ai(size, self, "a4",u)
+            self.ai[layer][5] = ai(size, self, "a5",u)
+            self.ai[layer][6] = ai(size, self, "a6",u)
+            self.ai[layer][7] = ai(size, self, "a7",u)
+            self.ai[layer][8] = ai(size, self, "a8",u)
+            self.ai[layer][9] = ai(size, self, "a9",u)
+            self.ai[layer][10] = ai(size, self, "a10",u)
 
-        a6 = wi(0., 'a6')
-        a7 = wi(1., 'a7')
-        a8 = wi(0., 'a8')
-        a9 = wi(0., 'a9')
-        a10 = wi(0., 'a10')
+        temp1 = self.ai[layer][2].expand(u.size()[0], size) * u
+        temp2 = temp1 + self.ai[layer][3].expand(u.size()[0], size)
+        temp3 = self.ai[layer][4].expand(u.size()[0], size) * u
 
-
-        temp1 = a2 * u
-        temp2 = temp1 + a3
-        temp3 = a4 * u
-
-        mu = a1 * nn.functional.sigmoid(temp2) + temp3 + a5
-        v = a6 * nn.functional.sigmoid(a7 * u + a8) + a9 * u + a10
-        # mu = a1 * tf.sigmoid(a2 * u + a3) + a4 * u + a5
-        # v = a6 * tf.sigmoid(a7 * u + a8) + a9 * u + a10
+        mu = self.ai[layer][1].expand(u.size()[0], size) * nn.functional.sigmoid(temp2) + temp3 + self.ai[layer][5].expand(u.size()[0], size)
+        v = self.ai[layer][6].expand(u.size()[0], size) * nn.functional.sigmoid(self.ai[layer][7].expand(u.size()[0], size) * u + self.ai[layer][8].expand(u.size()[0], size)) + self.ai[layer][9].expand(u.size()[0], size) * u + self.ai[layer][10].expand(u.size()[0], size)
 
         z_est = (z_c - mu) * v + mu
         return z_est
@@ -155,7 +159,7 @@ class VAE(nn.Module):
             z_pre_l, z_pre_u = self.split_input(z_pre,labeled)  # split labeled and unlabeled examples
 
             #TODO why only for unlabbeled if not labeled:
-            m, v = torch.mean(z_pre_u, 1), torch.var(z_pre_u, 1)
+            m, v = torch.mean(z_pre_u.data), torch.var(z_pre_u.data)
 
             d['m'][l], d['v'][l] = m, v  # save mean and variance of unlabeled examples for decoding
 
@@ -206,8 +210,8 @@ class VAE(nn.Module):
 
             u = batch_norm(u)
 
-            z_est[l] = self.g_gauss(z_c, u, layer_sizes[l])
-            z_est_bn = (z_est[l] - m.expand_as(z_est[l])) / v.expand_as(z_est[l])
+            z_est[l] = self.g_gauss(z_c, u, layer_sizes[l],l)
+            z_est_bn = (z_est[l] - m) / v
 
             z = z.detach()
 
