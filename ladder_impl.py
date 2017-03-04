@@ -27,11 +27,11 @@ L = len(layer_sizes) - 1
 parser = argparse.ArgumentParser(description='PyTorch MNIST Example')
 parser.add_argument('--batch-size', type=int, default=64, metavar='N',
                     help='input batch size for training (default: 64)')
-parser.add_argument('--test-batch-size', type=int, default=1000, metavar='N',
+parser.add_argument('--test-batch-size', type=int, default=64, metavar='N',
                     help='input batch size for testing (default: 1000)')
 parser.add_argument('--epochs', type=int, default=100, metavar='N',
                     help='number of epochs to train (default: 10)')
-parser.add_argument('--lr', type=float, default=0.10, metavar='LR',
+parser.add_argument('--lr', type=float, default=0.01, metavar='LR',
                     help='learning rate (default: 0.01)')
 parser.add_argument('--momentum', type=float, default=0.5, metavar='M',
                     help='SGD momentum (default: 0.5)')
@@ -39,7 +39,7 @@ parser.add_argument('--no-cuda', action='store_true', default=False,
                     help='enables CUDA training')
 parser.add_argument('--seed', type=int, default=1, metavar='S',
                     help='random seed (default: 1)')
-parser.add_argument('--log-interval', type=int, default=10, metavar='N',
+parser.add_argument('--log-interval', type=int, default=20, metavar='N',
                     help='how many batches to wait before logging training status')
 args = parser.parse_args()
 
@@ -52,9 +52,13 @@ torch.manual_seed(args.seed)
 
 
 print('loading data!')
-trainset_labeled = pickle.load(open("train_labeled.p", "rb"))
+train_loader = torch.utils.data.DataLoader(
+    datasets.MNIST('data', train=True, download=True,
+                   transform=transforms.ToTensor()),
+    batch_size=args.batch_size, shuffle=True)
+#trainset_labeled = pickle.load(open("train_labeled.p", "rb"))
 #validset = pickle.load(open("validation.p", "rb"))
-trainset_unlabeled = pickle.load(open("train_unlabeled.p", "rb"))
+#trainset_unlabeled = pickle.load(open("train_unlabeled.p", "rb"))
 
 def bi(layer, size, name,obj):
     #temp = torch.randn(size).type(dtype)
@@ -85,8 +89,9 @@ shapes = zip(layer_sizes[:-1], layer_sizes[1:])  # shapes of linear layers
 join = lambda l, u: torch.cat([l, u], 0)
 
 #print(trainset_unlabeled.train_labels.size())
-train_loader = torch.utils.data.DataLoader(trainset_labeled , batch_size=64, shuffle=True)
-unlabeled_train_loader = torch.utils.data.DataLoader( trainset_unlabeled, batch_size=64, shuffle=True)
+
+#train_loader = torch.utils.data.DataLoader(trainset_labeled , batch_size=64, shuffle=True, **kwargs)
+#unlabeled_train_loader = torch.utils.data.DataLoader( trainset_unlabeled, batch_size=64, shuffle=True, **kwargs)
 
 #valid_loader = torch.utils.data.DataLoader(validset, batch_size=64, shuffle=True)
 
@@ -145,7 +150,8 @@ class VAE(nn.Module):
         return ((input - m.data[0]) / math.sqrt(v.data[0] + 1e-10)) + 0.3
 
     def encoder(self,inputs, noise_std, labeled):
-        h = inputs + Variable(torch.mul(torch.randn(inputs.size()),noise_std))
+        temp = Variable(torch.mul(torch.randn(inputs.size()),noise_std))
+        h = inputs + temp
 
         d = {'z': {}, 'm': {}, 'v': {}, 'h': {}}
 
@@ -157,15 +163,13 @@ class VAE(nn.Module):
 
             d['h'][l - 1] = h
 
-            
             z_pre = torch.mm(h, self.weights['W'][l - 1])  # pre-activation
 
             z_pre_l, z_pre_u = self.split_input(z_pre,labeled)  # split labeled and unlabeled examples
 
-            #TODO why only for unlabbeled if not labeled:
-            m, v = torch.mean(z_pre_u.data), torch.var(z_pre_u.data)
-
-            d['m'][l], d['v'][l] = m, v  # save mean and variance of unlabeled examples for decoding
+            if noise_std == 0:
+                m, v = torch.mean(z_pre_u.data), torch.var(z_pre_u.data)
+                d['m'][l], d['v'][l] = m, v  # save mean and variance of unlabeled examples for decoding
 
             #batch_norm = torch.nn.BatchNorm1d(z_pre.size()[1])
 
@@ -219,7 +223,8 @@ class VAE(nn.Module):
 
             z = z.detach()
 
-            d_cost[l] = torch.nn.functional.binary_cross_entropy(torch.sigmoid(z_est_bn), torch.sigmoid(z))
+            d_cost[l] = reconstruction_function(torch.sigmoid(z_est_bn), z)
+            #d_cost[l] = torch.nn.functional.binary_cross_entropy(torch.sigmoid(z_est_bn), torch.sigmoid(z))
 
         return d_cost
 
@@ -238,23 +243,28 @@ class VAE(nn.Module):
         # u_cost = tf.add_n(d_cost)
         #print('xxxxxxxxx')
         #print("d_cost: " + str(d_cost))
-        u_cost = torch.sum(d_cost)
+        #u_cost = torch.sum(d_cost)
         #print('xxxxxxxxx')
         #print("u_cost: " + str(u_cost.size()))
 
         if labeled:
             s_cost = torch.nn.functional.cross_entropy(h_clean,target)  # supervised cost
-            return u_cost + s_cost
+            #return u_cost + s_cost
+            return s_cost
 
         return u_cost
 
 model  = VAE()
 
-optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum) #TODO: change to something
+optimizer = optim.Adam(model.parameters(), lr=args.lr)#TODO: change to something
 
+
+#for param in model.parameters():
+#    print(type(param.data), param.size())
 
 def train(epoch):
     model.train()
+    train_loss = 0
     for batch_idx, (data, target) in enumerate(train_loader):
         data, target = Variable(data), Variable(target)
 
@@ -262,12 +272,18 @@ def train(epoch):
         optimizer.zero_grad()
         loss = model((data, target,True))
         loss.backward()
+        train_loss += loss.data[0]
         optimizer.step()
 
         if batch_idx % args.log_interval == 0:
             print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
                 epoch, batch_idx * len(data), len(train_loader.dataset),
                        100. * batch_idx / len(train_loader), loss.data[0]))
+
+    print('====> Epoch: {} Average loss: {:.4f}'.format(
+        epoch, args.batch_size * train_loss / len(train_loader.dataset)))
+
+    '''
 
     for batch_idx, (data, target) in enumerate(unlabeled_train_loader):
         data, target = Variable(data), Variable(target)
@@ -281,6 +297,8 @@ def train(epoch):
             print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
                 epoch, batch_idx * len(data), len(train_loader.dataset),
                        100. * batch_idx / len(train_loader), loss.data[0]))
+
+    '''
 
 
 
