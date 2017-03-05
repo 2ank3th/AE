@@ -56,8 +56,8 @@ train_loader = torch.utils.data.DataLoader(
     datasets.MNIST('data', train=True, download=True,
                    transform=transforms.ToTensor()),
     batch_size=args.batch_size, shuffle=True)
-#trainset_labeled = pickle.load(open("train_labeled.p", "rb"))
-#validset = pickle.load(open("validation.p", "rb"))
+trainset_labeled = pickle.load(open("train_labeled.p", "rb"))
+validset = pickle.load(open("validation.p", "rb"))
 #trainset_unlabeled = pickle.load(open("train_unlabeled.p", "rb"))
 
 def bi(layer, size, name,obj):
@@ -90,10 +90,9 @@ join = lambda l, u: torch.cat([l, u], 0)
 
 #print(trainset_unlabeled.train_labels.size())
 
-#train_loader = torch.utils.data.DataLoader(trainset_labeled , batch_size=64, shuffle=True, **kwargs)
+train_loader = torch.utils.data.DataLoader(trainset_labeled , batch_size=64, shuffle=True, **kwargs)
 #unlabeled_train_loader = torch.utils.data.DataLoader( trainset_unlabeled, batch_size=64, shuffle=True, **kwargs)
-
-#valid_loader = torch.utils.data.DataLoader(validset, batch_size=64, shuffle=True)
+valid_loader = torch.utils.data.DataLoader(validset, batch_size=64, shuffle=True)
 
 reconstruction_function = nn.BCELoss()
 reconstruction_function.size_average = False
@@ -259,16 +258,16 @@ class VAE(nn.Module):
         # u_cost = tf.add_n(d_cost)
         #print('xxxxxxxxx')
         #print("d_cost: " + str(d_cost))
-        #u_cost = torch.sum(d_cost)
+        u_cost = torch.sum(d_cost)
         #print('xxxxxxxxx')
         #print("u_cost: " + str(u_cost.size()))
 
         if labeled:
             s_cost = torch.nn.functional.cross_entropy(h_corr,target)  # supervised cost
             #return u_cost + s_cost
-            return s_cost
+            return h_corr,s_cost
 
-        return u_cost
+        return h_corr,u_cost
 
 model  = VAE()
 
@@ -286,7 +285,7 @@ def train(epoch):
 
         data = data.view(-1,784) #TODO possible reason of bad accuracy
         optimizer.zero_grad()
-        loss = model((data, target,True))
+        output,loss = model((data, target,True))
         loss.backward()
         train_loss += loss.data[0]
         optimizer.step()
@@ -305,7 +304,7 @@ def train(epoch):
         data, target = Variable(data), Variable(target)
         data = data.view(-1, 784)  # TODO possible reason of bad accuracy
         optimizer.zero_grad()
-        loss = model((data, target,False))
+        output,loss = model((data, target,False))
         loss.backward()
         optimizer.step()
 
@@ -318,9 +317,27 @@ def train(epoch):
 
 
 
+def test(epoch, valid_loader):
 
+    model.eval()
+    test_loss = 0
+    correct = 0
+
+    for data, target in valid_loader:
+        data, target = Variable(data, volatile=True), Variable(target)
+        output,loss = model(data)
+        #print(output.data)
+        print(target)
+        test_loss += F.nll_loss(output, target).data[0]
+        pred = output.data.max(1)[1] # get the index of the max log-probability
+        correct += pred.eq(target.data).cpu().sum()
+
+    test_loss /= len(valid_loader) # loss function already averages over batch size
+    print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(
+        test_loss, correct, len(valid_loader.dataset),
+        100. * correct / len(valid_loader.dataset)))
 
 
 for epoch in range(1, args.epochs + 1):
     train(epoch)
-    #test(epoch, valid_loader)
+    test(epoch, valid_loader)
