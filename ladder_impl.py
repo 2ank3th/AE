@@ -161,9 +161,6 @@ class VAE(nn.Module):
             # pre-activation and batch normalization
             z_pre = torch.mm(h_l_prev, self.weights['W'][l - 1])
 
-            m_l = torch.mean(z_pre)
-            v_l = torch.var(z_pre)
-
             z_l,m_l, v_l = self.batch_norm(z_pre)
 
             if l == L:
@@ -201,25 +198,9 @@ class VAE(nn.Module):
 
             z_pre = torch.mm(h_l_prev, self.weights['W'][l - 1])  # pre-activation and batch normalization
 
-            #z_pre_l, z_pre_u = self.split_input(z_pre,labeled)  # split labeled and unlabeled examples
-
-            #if noise_std == 0:
-            #    m, v = torch.mean(z_pre_u.data), torch.var(z_pre_u.data)
-            #    d['m'][l], d['v'][l] = m, v  # save mean and variance of unlabeled examples for decoding
-
-            #batch_norm = torch.nn.BatchNorm1d(z_pre.size()[1])
-
             z_l,_,_  = self.batch_norm(z_pre)
             #TODO: BN for test is different
 
-            #if l == L:
-                # use softmax activation in output layer
-                #softmax = torch.nn.Softmax()
-
-                #h = softmax(z)
-                #TODO h = softmax(self.weights['gamma'][l - 1] * (z + self.weights["beta"][l - 1]))
-            #else:
-                # use ReLU activation in hidden layers
             relU = torch.nn.ReLU()
 
             h_l = relU(z_l) #TODO + self.weights["beta"][l - 1])
@@ -233,27 +214,28 @@ class VAE(nn.Module):
     def decoder(self,h_clean,h_corr,  d_clean, d_corr):
         # Decoder
         z_est = {}
+        z_est[L] = h_corr
+
         d_cost = Variable(torch.FloatTensor(L + 1), requires_grad=False) # to store the denoising cost of all layers
 
         for l in range(L, 0, -1): #TODO: last layer not run
             #print ("Layer ", l, ": ", layer_sizes[l + 1] if l + 1 < len(layer_sizes) else None, " -> ", layer_sizes[l], ", denoising cost: ", denoising_cost[l])
 
-            z, z_c = d_clean['z'][l], d_corr['z'][l]
+            if l == L:
+                u_l =  z_est[L]
+            else:
+                u_l = torch.mm(z_est[l + 1], self.weights['V'][l])
+
+            u_l = self.batch_norm(u)
+
+
+            z_corr_encoder_l =  d_corr['z'][l]
+
+            z_corr_denoised_l = self.g_gauss(z_corr_encoder_l,u_l,layer_sizes[l],l)
 
             m, v = d_clean['m'].get(l, 0), d_clean['v'].get(l, 1 - 1e-10)
 
-            if l == L:
-                u =  h_corr #unlabeled(h_corr)
-            else:
-                u = torch.mm(z_est[l + 1], self.weights['V'][l])
-                # u = tf.matmul(z_est[l+1], weights['V'][l])
-
-            #batch_norm = torch.nn.BatchNorm1d(u.size()[1])
-
-            u = self.batch_norm(u)
-
-            z_est[l] = self.g_gauss(z_c, u, layer_sizes[l],l)
-            z_est_bn = (z_est[l] - m) / v
+            z_est_bn = (z_est[l] - m) / v # TODO: element wise
 
             z = z.detach()
 
@@ -264,7 +246,7 @@ class VAE(nn.Module):
 
     def forward(self, (x,target,labeled)):
 
-        h_corr,d_corr = self.encoder(x,0.3,labeled) #TODO: add noise
+        h_corr,d_corr = self.encoder_noise(x,0.3,labeled) #TODO: add noise
         h_clean,d_clean = self.encoder(x,0,labeled)
 
         d_cost = self.decoder(h_clean,h_corr, d_clean,d_corr)
@@ -282,7 +264,7 @@ class VAE(nn.Module):
         #print("u_cost: " + str(u_cost.size()))
 
         if labeled:
-            s_cost = torch.nn.functional.cross_entropy(h_clean,target)  # supervised cost
+            s_cost = torch.nn.functional.cross_entropy(h_corr,target)  # supervised cost
             #return u_cost + s_cost
             return s_cost
 
