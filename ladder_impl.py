@@ -2,22 +2,14 @@ from __future__ import print_function
 
 import torch
 from torch.autograd import Variable
-import input_data
 import argparse
-import math
-import os
-import csv
 import cPickle as pickle
 
-import numpy as np
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torchvision import datasets, transforms
 
-
-
-from tqdm import tqdm
 
 dtype = torch.FloatTensor
 layer_sizes = [784, 1000, 500, 250, 250, 250, 10]
@@ -64,7 +56,7 @@ def bi(layer, size, name,obj):
     #temp = torch.randn(size).type(dtype)
     #tv = Variable(temp)
     #tv.register_parameter(
-    para = nn.Parameter(torch.randn(size).type(dtype))
+    para = nn.Parameter(torch.randn(1,size).type(dtype))
     obj.register_parameter(str(layer)+name+str(size),para)
     return para
     #return Variable(inits * torch.ones(size))
@@ -75,11 +67,6 @@ def wi(layer,shape, name,obj):
     #print(str(layer)+name + str(shape[0]) + str(shape[1])) #TODO revisit name logic to avoid conflicts
     obj.register_parameter(str(layer)+name + str(shape[0]) + str(shape[1]),para)
     #return Variable(torch.randn(shape[0],shape[1])) / math.sqrt(shape[0])
-    return para
-
-def ai(size,obj, name):
-    para = nn.Parameter(torch.ones(1, size), requires_grad=True)
-    obj.register_parameter(name,para)
     return para
 
 
@@ -138,12 +125,14 @@ class VAE(nn.Module):
         self.weights = {'W': [wi(i,s, "W",self) for i,s in enumerate(shapes)],  # Encoder weights
            'V': [wi(i,s[::-1], "V",self) for i,s in enumerate(shapes)],  # Decoder weights
            # batch normalization parameter to shift the normalized value
-           'beta': [bi(l, layer_sizes[l+1], "beta",self) for l in range(L)],
+           'beta': [bi(l+1, layer_sizes[l+1], "beta",self) for l in range(L)],
            # batch normalization parameter to scale the normalized value
-           'gamma': [bi(l, layer_sizes[l+1], "beta",self) for l in range(L)]}
+           'gamma': [bi(l+1, layer_sizes[l+1], "beta",self) for l in range(L)]}
 
         self.a = {}
         self.optim = {}
+        self.running_var = [Variable(torch.ones(1,l), requires_grad=False) for l in layer_sizes[1:]]
+        self.running_mean = [Variable(torch.zeros(1, l), requires_grad=False) for l in layer_sizes[1:]]
 
         for i in range(L+1):
             self.a[i] = Denoise(layer_sizes[i])
@@ -155,39 +144,13 @@ class VAE(nn.Module):
         else:
             return None, h
 
-    def g__gauss(self,z_c, u, size,layer):
-        "gaussian denoising function proposed in the original paper"
-        if not layer in self.ai:
-            self.ai[layer] = {}
-            #TODO : when to reinitialize
-            self.ai[layer][1] = ai(size,self,"a1",u)
-            self.ai[layer][2] = ai(size,self,"a2",u)
-            self.ai[layer][3] = ai(size, self, "a3",u)
-            self.ai[layer][4] = ai(size, self, "a4",u)
-            self.ai[layer][5] = ai(size, self, "a5",u)
-            self.ai[layer][6] = ai(size, self, "a6",u)
-            self.ai[layer][7] = ai(size, self, "a7",u)
-            self.ai[layer][8] = ai(size, self, "a8",u)
-            self.ai[layer][9] = ai(size, self, "a9",u)
-            self.ai[layer][10] = ai(size, self, "a10",u)
-
-        temp1 = self.ai[layer][2].expand(u.size()[0], size) * u
-        temp2 = temp1 + self.ai[layer][3].expand(u.size()[0], size)
-        temp3 = self.ai[layer][4].expand(u.size()[0], size) * u
-
-        mu = self.ai[layer][1].expand(u.size()[0], size) * nn.functional.sigmoid(temp2) + temp3 + self.ai[layer][5].expand(u.size()[0], size)
-        v = self.ai[layer][6].expand(u.size()[0], size) * nn.functional.sigmoid(self.ai[layer][7].expand(u.size()[0], size) * u + self.ai[layer][8].expand(u.size()[0], size)) + self.ai[layer][9].expand(u.size()[0], size) * u + self.ai[layer][10].expand(u.size()[0], size)
-
-        z_est = (z_c - mu) * v + mu
-        return z_est
-
-
-    def batch_norm(self, input):
+    def batch_norm(self, input, affine_flag):
         row = input.size()[0]
         column = input.size()[1]
         m = torch.mean(input, 0).expand(row, column)
         v = torch.var(input, 0).expand(row, column)
-        return ((input - m) / (torch.sqrt(v + 1e-10))),m,v
+        bn =  nn.BatchNorm1d(column,affine = affine_flag)
+        return bn(input),m,v
 
 
     def encoder_clean(self,h,labeled):
@@ -201,8 +164,7 @@ class VAE(nn.Module):
 
             # pre-activation and batch normalization
             z_pre = torch.mm(h_l_prev, self.weights['W'][l - 1])
-
-            z_l,m_l, v_l = self.batch_norm(z_pre)
+            z_l, m_l, v_l = self.batch_norm(z_pre, True)
 
             if l == L:
             # use softmax activation in output layer
@@ -241,8 +203,7 @@ class VAE(nn.Module):
 
             z_pre = torch.mm(h_l_prev, self.weights['W'][l - 1])  # pre-activation and batch normalization
 
-            z_l,_,_  = self.batch_norm(z_pre)
-            #TODO: BN for test is different
+            z_l,_,_  = self.batch_norm(z_pre, True)
 
             relU = torch.nn.ReLU()
 
@@ -269,7 +230,7 @@ class VAE(nn.Module):
             else:
                 u_l = torch.mm(z_est[l + 1], self.weights['V'][l])
 
-            u_l,_,_ = self.batch_norm(u_l)
+            u_l,_,_ = self.batch_norm(u_l, False)
 
             z_corr_encoder_l=d_corr['z'][l]
 
@@ -286,8 +247,6 @@ class VAE(nn.Module):
             recon_loss = reconstruction_function(torch.sigmoid(z_est[l]), torch.sigmoid(z))
             recon_loss.backward(retain_variables=True)
             self.optim[l].step()
-
-
 
             d_cost[l] = recon_loss
 
@@ -320,8 +279,9 @@ optimizer = optim.Adam(model.parameters(), lr=args.lr)
 
 
 
-for param in model.parameters():
-    print(type(param.data), param.size())
+#for key in model.a:
+#    for param in model.a[key].parameters():
+#        print(type(param.data), param.size())
 
 def train(epoch):
     model.train()
@@ -357,8 +317,9 @@ def train(epoch):
 
         if batch_idx % args.log_interval == 0:
             print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-                epoch, batch_idx * len(data), len(train_loader.dataset),
-                       100. * batch_idx / len(train_loader), loss.data[0]))
+                epoch, batch_idx * len(data), len(unlabeled_train_loader.dataset),
+                       100. * batch_idx / len(unlabeled_train_loader), loss.data[0]))
+
 
     print("epoch {} completed",epoch)
 
