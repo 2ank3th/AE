@@ -235,7 +235,7 @@ class VAE(nn.Module):
             if l == L:
                 u_l =  z_est[L]
             else:
-                u_l = torch.mm(z_est[l + 1], self.weights['V'][l+1])
+                u_l = torch.mm(z_est[l + 1], self.weights['V'][l])
 
             u_l,_,_ = self.batch_norm(u_l, False)
 
