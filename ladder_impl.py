@@ -29,7 +29,7 @@ parser.add_argument('--batch-size', type=int, default=64, metavar='N',
                     help='input batch size for training (default: 64)')
 parser.add_argument('--test-batch-size', type=int, default=64, metavar='N',
                     help='input batch size for testing (default: 1000)')
-parser.add_argument('--epochs', type=int, default=10, metavar='N',
+parser.add_argument('--epochs', type=int, default=100, metavar='N',
                     help='number of epochs to train (default: 10)')
 parser.add_argument('--lr', type=float, default=0.01, metavar='LR',
                     help='learning rate (default: 0.01)')
@@ -281,12 +281,11 @@ class VAE(nn.Module):
 
             z = z.detach()
 
-            for i in range(10):
-                z_est[l] = self.a[l](u_l,z_corr_encoder_l,m,v,l)
-                self.optim[l].zero_grad()
-                recon_loss = reconstruction_function(torch.sigmoid(z_est[l]), torch.sigmoid(z))
-                recon_loss.backward(retain_variables=True)
-                self.optim[l].step()
+            z_est[l] = self.a[l](u_l,z_corr_encoder_l,m,v,l)
+            self.optim[l].zero_grad()
+            recon_loss = reconstruction_function(torch.sigmoid(z_est[l]), torch.sigmoid(z))
+            recon_loss.backward(retain_variables=True)
+            self.optim[l].step()
 
 
 
@@ -294,17 +293,21 @@ class VAE(nn.Module):
 
         return d_cost
 
-    def forward(self, x,target,labeled):
+    def forward(self, x,target,labeled,test):
 
         h_corr,d_corr = self.encoder_noise(x,0.3,labeled) #TODO: add noise
         h_clean,d_clean = self.encoder_clean(x,labeled)
+
+        if test:
+            s_cost = torch.nn.functional.cross_entropy(h_corr, target)  # supervised cost
+            return h_clean,s_cost
 
         d_cost = self.decoder(h_clean,h_corr, d_clean,d_corr)
 
         u_cost = torch.sum(d_cost)
 
 
-        if labeled:
+        if labeled :
             s_cost = torch.nn.functional.cross_entropy(h_corr,target)  # supervised cost
             return h_corr,s_cost + u_cost
 
@@ -328,7 +331,7 @@ def train(epoch):
 
         data = data.view(-1,784) #TODO possible reason of bad accuracy
 
-        output,loss = model(data, target,True)
+        output,loss = model(data, target,True,False)
         optimizer.zero_grad()
         loss.backward()
         train_loss += loss.data[0]
@@ -347,7 +350,7 @@ def train(epoch):
         data, target = Variable(data), Variable(target)
         data = data.view(-1, 784)  # TODO possible reason of bad accuracy
 
-        output,loss = model(data, target,False)
+        output,loss = model(data, target,False, False )
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
@@ -356,6 +359,8 @@ def train(epoch):
             print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
                 epoch, batch_idx * len(data), len(train_loader.dataset),
                        100. * batch_idx / len(train_loader), loss.data[0]))
+
+    print("epoch {} completed",epoch)
 
 
 
@@ -370,7 +375,7 @@ def test(epoch, valid_loader):
     for data, target in valid_loader:
         data, target = Variable(data, volatile=True), Variable(target)
         data = data.view(-1, 784)
-        output,loss = model(data,target, True)
+        output,loss = model(data,target, True, True)
         test_loss += F.nll_loss(output, target).data[0]
         pred = output.data.max(1)[1] # get the index of the max log-probability
         correct += pred.eq(target.data).cpu().sum()
