@@ -77,7 +77,7 @@ def wi(layer,shape, name,obj):
     #return Variable(torch.randn(shape[0],shape[1])) / math.sqrt(shape[0])
     return para
 
-def ai(size,obj, name,u):
+def ai(size,obj, name):
     para = nn.Parameter(torch.ones(1, size), requires_grad=True)
     obj.register_parameter(name,para)
     return para
@@ -97,6 +97,40 @@ valid_loader = torch.utils.data.DataLoader(validset, batch_size=64, shuffle=True
 reconstruction_function = nn.BCELoss()
 reconstruction_function.size_average = False
 
+class Denoise(nn.Module):
+    def __init__(self,size):
+        super(Denoise, self).__init__()
+        self.a1 = nn.Parameter(torch.ones(1, size), requires_grad=True)
+        self.a2 = nn.Parameter(torch.ones(1, size), requires_grad=True)
+        self.a3 = nn.Parameter(torch.ones(1, size), requires_grad=True)
+        self.a4 = nn.Parameter(torch.ones(1, size), requires_grad=True)
+        self.a5 = nn.Parameter(torch.ones(1, size), requires_grad=True)
+        self.a6 = nn.Parameter(torch.ones(1, size), requires_grad=True)
+        self.a7 = nn.Parameter(torch.ones(1, size), requires_grad=True)
+        self.a8 = nn.Parameter(torch.ones(1, size), requires_grad=True)
+        self.a9 = nn.Parameter(torch.ones(1, size), requires_grad=True)
+        self.a10 = nn.Parameter(torch.ones(1, size), requires_grad=True)
+
+    def denoise_function(self,z_c, u, size):
+
+        temp1 = self.a2.expand(u.size()[0], size) * u
+        temp2 = temp1 + self.a3.expand(u.size()[0], size)
+        temp3 = self.a4.expand(u.size()[0], size) * u
+
+        mu = self.a1.expand(u.size()[0], size) * nn.functional.sigmoid(temp2) + temp3 + self.a5.expand(u.size()[0], size)
+        v = self.a6.expand(u.size()[0], size) * nn.functional.sigmoid(self.a7.expand(u.size()[0], size) * u + self.a8.expand(u.size()[0], size)) + self.a9.expand(u.size()[0], size) * u + self.a10.expand(u.size()[0], size)
+
+        z_est = (z_c - mu) * v + mu
+        return z_est
+
+    def forward(self, u,z_corr, m,v,layer):
+        z_corr_denoised_l = self.denoise_function(z_corr, u, layer_sizes[layer])
+
+        z_est = (z_corr_denoised_l - m) / v
+
+        return z_est
+
+
 class VAE(nn.Module):
     def __init__(self):
         super(VAE, self).__init__()
@@ -107,7 +141,13 @@ class VAE(nn.Module):
            'beta': [bi(l, layer_sizes[l+1], "beta",self) for l in range(L)],
            # batch normalization parameter to scale the normalized value
            'gamma': [bi(l, layer_sizes[l+1], "beta",self) for l in range(L)]}
-        self.ai = {}
+
+        self.a = {}
+        self.optim = {}
+
+        for i in range(L+1):
+            self.a[i] = Denoise(layer_sizes[i])
+            self.optim[i] = optim.Adam(self.a[i].parameters(), lr=args.lr)
 
     def split_input(self, h, labeled):
         if labeled:
@@ -115,7 +155,7 @@ class VAE(nn.Module):
         else:
             return None, h
 
-    def g_gauss(self,z_c, u, size,layer):
+    def g__gauss(self,z_c, u, size,layer):
         "gaussian denoising function proposed in the original paper"
         if not layer in self.ai:
             self.ai[layer] = {}
@@ -233,17 +273,24 @@ class VAE(nn.Module):
 
             z_corr_encoder_l=d_corr['z'][l]
 
-            z_corr_denoised_l = self.g_gauss(z_corr_encoder_l,u_l,layer_sizes[l],l)
+            #z_corr_denoised_l = self.g_gauss(z_corr_encoder_l,u_l,layer_sizes[l],l)
 
             m, v = d_clean['m'].get(l, 0), d_clean['v'].get(l, 1 - 1e-10)
-
-            z_est[l] = (z_corr_denoised_l - m) / v
 
             z = d_clean['z'][l]
 
             z = z.detach()
 
-            d_cost[l] = reconstruction_function(torch.sigmoid(z_corr_denoised_l), z)
+            for i in range(10):
+                z_est[l] = self.a[l](u_l,z_corr_encoder_l,m,v,l)
+                self.optim[l].zero_grad()
+                recon_loss = reconstruction_function(torch.sigmoid(z_est[l]), torch.sigmoid(z))
+                recon_loss.backward(retain_variables=True)
+                self.optim[l].step()
+
+
+
+            d_cost[l] = recon_loss
 
         return d_cost
 
@@ -256,17 +303,18 @@ class VAE(nn.Module):
 
         u_cost = torch.sum(d_cost)
 
-        '''
+
         if labeled:
             s_cost = torch.nn.functional.cross_entropy(h_corr,target)  # supervised cost
             return h_corr,s_cost + u_cost
-        '''
+
 
         return h_corr,u_cost
 
 model  = VAE()
 
-optimizer = optim.Adam(model.parameters(), lr=args.lr)#TODO: change to something
+optimizer = optim.Adam(model.parameters(), lr=args.lr)
+
 
 
 for param in model.parameters():
@@ -279,8 +327,9 @@ def train(epoch):
         data, target = Variable(data), Variable(target)
 
         data = data.view(-1,784) #TODO possible reason of bad accuracy
-        optimizer.zero_grad()
+
         output,loss = model(data, target,True)
+        optimizer.zero_grad()
         loss.backward()
         train_loss += loss.data[0]
         optimizer.step()
@@ -297,8 +346,9 @@ def train(epoch):
     for batch_idx, (data, target) in enumerate(unlabeled_train_loader):
         data, target = Variable(data), Variable(target)
         data = data.view(-1, 784)  # TODO possible reason of bad accuracy
-        optimizer.zero_grad()
+
         output,loss = model(data, target,False)
+        optimizer.zero_grad()
         loss.backward()
         optimizer.step()
 
