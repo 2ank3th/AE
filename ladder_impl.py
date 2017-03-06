@@ -230,7 +230,7 @@ class VAE(nn.Module):
 
         d_cost = Variable(torch.FloatTensor(L + 1), requires_grad=False)
 
-        for l in range(L, -1, -1):
+        for l in range(L, 0, -1):
 
             if l == L:
                 u_l =  z_est[L]
