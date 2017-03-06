@@ -16,14 +16,12 @@ import torch.optim as optim
 from torchvision import datasets, transforms
 
 
-x = torch.rand(2, 2)
+a = torch.randn(2, 2)
+print(a)
 
-print(x)
+print(torch.norm(a, 2, 0))
 
-row = x.size()[0]
-column = x.size()[1]
 
-m = torch.mean(x, 0)
+print(torch.norm(a, 1, 1))
 
-print(m.expand(row, column))
 

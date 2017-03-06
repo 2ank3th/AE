@@ -113,7 +113,7 @@ class Denoise(nn.Module):
     def forward(self, u,z_corr, m,v,layer):
         z_corr_denoised_l = self.denoise_function(z_corr, u, layer_sizes[layer])
 
-        z_est = (z_corr_denoised_l - m) / v
+        z_est = (z_corr_denoised_l - m) / torch.pow(v,0.5)
 
         return z_est
 
@@ -147,11 +147,10 @@ class VAE(nn.Module):
     def batch_norm(self, input, affine_flag):
         row = input.size()[0]
         column = input.size()[1]
-        m = torch.mean(input, 0).expand(row, column)
-        v = torch.var(input, 0).expand(row, column)
+        m = torch.mean(input, 0) #.expand(row, column)
+        v = torch.var(input, 0)#.expand(row, column)
         bn =  nn.BatchNorm1d(column,affine = affine_flag)
         return bn(input),m,v
-
 
     def encoder_clean(self,h,labeled):
         d = {'z': {}, 'm': {}, 'v': {}, 'h': {}}
@@ -162,9 +161,15 @@ class VAE(nn.Module):
             # post activation from previos layer
             h_l_prev = d['h'][l - 1]
 
+
             # pre-activation and batch normalization
             z_pre = torch.mm(h_l_prev, self.weights['W'][l - 1])
+
             z_l, m_l, v_l = self.batch_norm(z_pre, True)
+
+
+            d['m'][l] = m_l
+            d['v'][l] = v_l
 
             if l == L:
             # use softmax activation in output layer
@@ -187,6 +192,7 @@ class VAE(nn.Module):
 
     def encoder_noise(self,inputs, noise_std, labeled):
         noise = Variable(torch.mul(torch.randn(inputs.size()),noise_std))
+
         h = inputs + noise
 
         d = {'z': {}, 'm': {}, 'v': {}, 'h': {}}
@@ -203,7 +209,9 @@ class VAE(nn.Module):
 
             z_pre = torch.mm(h_l_prev, self.weights['W'][l - 1])  # pre-activation and batch normalization
 
-            z_l,_,_  = self.batch_norm(z_pre, True)
+            z_l,_,_  = self.batch_norm(z_pre, False)
+
+
 
             relU = torch.nn.ReLU()
 
@@ -213,6 +221,9 @@ class VAE(nn.Module):
             d['h'][l] = h_l
 
         return d['h'][L], d
+
+    def reconstruction_function_n(self, z_recon,z_input):
+        return torch.norm(z_recon - z_input, 2, 1) #TODO Try 0
 
 
     def decoder(self,h_clean,h_corr,  d_clean, d_corr):
@@ -232,23 +243,26 @@ class VAE(nn.Module):
 
             u_l,_,_ = self.batch_norm(u_l, False)
 
+
             z_corr_encoder_l=d_corr['z'][l]
 
             #z_corr_denoised_l = self.g_gauss(z_corr_encoder_l,u_l,layer_sizes[l],l)
 
-            m, v = d_clean['m'].get(l, 0), d_clean['v'].get(l, 1 - 1e-10)
+            m, v = d_clean['m'][l], d_clean['v'][l]
 
             z = d_clean['z'][l]
 
             z = z.detach()
 
-            z_est[l] = self.a[l](u_l,z_corr_encoder_l,m,v,l)
+            z_est[l] = self.a[l](u_l,z_corr_encoder_l,m.expand(u_l.size()[0],u_l.size()[1]),v.expand(u_l.size()[0],u_l.size()[1]),l)
             self.optim[l].zero_grad()
-            recon_loss = reconstruction_function(torch.sigmoid(z_est[l]), torch.sigmoid(z))
+
+            #recon_loss = reconstruction_function(torch.sigmoid(z_est[l]), torch.sigmoid(z))\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+            recon_loss = torch.sum(self.reconstruction_function_n(z_est[l], z))
             recon_loss.backward(retain_variables=True)
             self.optim[l].step()
 
-            d_cost[l] = recon_loss
+            d_cost[l] = torch.mul(recon_loss,denoising_cost[l])
 
         return d_cost
 
@@ -268,7 +282,7 @@ class VAE(nn.Module):
 
         if labeled :
             s_cost = torch.nn.functional.cross_entropy(h_corr,target)  # supervised cost
-            return h_corr,s_cost + u_cost
+            return h_corr,(s_cost + u_cost)
 
 
         return h_corr,u_cost
@@ -286,6 +300,7 @@ optimizer = optim.Adam(model.parameters(), lr=args.lr)
 def train(epoch):
     model.train()
     train_loss = 0
+
     for batch_idx, (data, target) in enumerate(train_loader):
         data, target = Variable(data), Variable(target)
 
@@ -304,6 +319,7 @@ def train(epoch):
 
     print('====> Epoch: {} Average loss: {:.4f}'.format(
         epoch, args.batch_size * train_loss / len(train_loader.dataset)))
+
 
 
     for batch_idx, (data, target) in enumerate(unlabeled_train_loader):
