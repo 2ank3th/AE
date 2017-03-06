@@ -29,7 +29,7 @@ parser.add_argument('--batch-size', type=int, default=64, metavar='N',
                     help='input batch size for training (default: 64)')
 parser.add_argument('--test-batch-size', type=int, default=64, metavar='N',
                     help='input batch size for testing (default: 1000)')
-parser.add_argument('--epochs', type=int, default=100, metavar='N',
+parser.add_argument('--epochs', type=int, default=10, metavar='N',
                     help='number of epochs to train (default: 10)')
 parser.add_argument('--lr', type=float, default=0.01, metavar='LR',
                     help='learning rate (default: 0.01)')
@@ -58,7 +58,7 @@ train_loader = torch.utils.data.DataLoader(
     batch_size=args.batch_size, shuffle=True)
 trainset_labeled = pickle.load(open("train_labeled.p", "rb"))
 validset = pickle.load(open("validation.p", "rb"))
-#trainset_unlabeled = pickle.load(open("train_unlabeled.p", "rb"))
+trainset_unlabeled = pickle.load(open("train_unlabeled.p", "rb"))
 
 def bi(layer, size, name,obj):
     #temp = torch.randn(size).type(dtype)
@@ -90,8 +90,8 @@ join = lambda l, u: torch.cat([l, u], 0)
 
 #print(trainset_unlabeled.train_labels.size())
 
-train_loader = torch.utils.data.DataLoader(trainset_labeled , batch_size=64, shuffle=True, **kwargs)
-#unlabeled_train_loader = torch.utils.data.DataLoader( trainset_unlabeled, batch_size=64, shuffle=True, **kwargs)
+train_loader = torch.utils.data.DataLoader(trainset_labeled , batch_size=64, shuffle=True)
+unlabeled_train_loader = torch.utils.data.DataLoader( trainset_unlabeled, batch_size=64, shuffle=True)
 valid_loader = torch.utils.data.DataLoader(validset, batch_size=64, shuffle=True)
 
 reconstruction_function = nn.BCELoss()
@@ -141,17 +141,19 @@ class VAE(nn.Module):
         z_est = (z_c - mu) * v + mu
         return z_est
 
+
     def batch_norm(self, input):
-        m = torch.mean(input)
-        v = torch.var(input)
+        row = input.size()[0]
+        column = input.size()[1]
+        m = torch.mean(input, 0).expand(row, column)
+        v = torch.var(input, 0).expand(row, column)
+        return ((input - m) / (torch.sqrt(v + 1e-10))),m,v
 
-        ans = ((input - m.data[0]) / math.sqrt(v.data[0] + 1e-10)) + 0.3
-        return (((input - m.data[0]) / math.sqrt(v.data[0] + 1e-10)) + 0.3),m,v
 
-    def encoder_clean(self,h, noise_std, labeled):
+    def encoder_clean(self,h,labeled):
         d = {'z': {}, 'm': {}, 'v': {}, 'h': {}}
         d['z'][0] = h
-        d['z'][0] = h
+        d['h'][0] = h
 
         for l in xrange(1, L+1):
             # post activation from previos layer
@@ -165,7 +167,9 @@ class VAE(nn.Module):
             if l == L:
             # use softmax activation in output layer
                 softmax = torch.nn.Softmax()
-                h = softmax(z)
+                h_l = softmax(z_l)
+                d['z'][l] = z_l
+                d['h'][l] = h_l
             # TODO h = softmax(self.weights['gamma'][l - 1] * (z + self.weights["beta"][l - 1]))
             else:
                 # use ReLU activation in hidden layers
@@ -186,7 +190,7 @@ class VAE(nn.Module):
         d = {'z': {}, 'm': {}, 'v': {}, 'h': {}}
 
         d['z'][0] = h
-        d['z'][0] = h
+        d['h'][0] = h
 
         for l in xrange(1,L+1):
 
@@ -225,47 +229,38 @@ class VAE(nn.Module):
             else:
                 u_l = torch.mm(z_est[l + 1], self.weights['V'][l])
 
-            u_l = self.batch_norm(u)
+            u_l,_,_ = self.batch_norm(u_l)
 
-
-            z_corr_encoder_l =  d_corr['z'][l]
+            z_corr_encoder_l=d_corr['z'][l]
 
             z_corr_denoised_l = self.g_gauss(z_corr_encoder_l,u_l,layer_sizes[l],l)
 
             m, v = d_clean['m'].get(l, 0), d_clean['v'].get(l, 1 - 1e-10)
 
-            z_est_bn = (z_est[l] - m) / v # TODO: element wise
+            z_est[l] = (z_corr_denoised_l - m) / v
+
+            z = d_clean['z'][l]
 
             z = z.detach()
 
-            d_cost[l] = reconstruction_function(torch.sigmoid(z_est_bn), z)
-            #d_cost[l] = torch.nn.functional.binary_cross_entropy(torch.sigmoid(z_est_bn), torch.sigmoid(z))
+            d_cost[l] = reconstruction_function(torch.sigmoid(z_corr_denoised_l), z)
 
         return d_cost
 
-    def forward(self, (x,target,labeled)):
+    def forward(self, x,target,labeled):
 
         h_corr,d_corr = self.encoder_noise(x,0.3,labeled) #TODO: add noise
-        h_clean,d_clean = self.encoder(x,0,labeled)
+        h_clean,d_clean = self.encoder_clean(x,labeled)
 
         d_cost = self.decoder(h_clean,h_corr, d_clean,d_corr)
-        
-        # calculate total unsupervised cost by adding the denoising cost of all layers
-        #u_cost = torch.zeros(torch.size(d_cost[0]))
 
-        #for ele in d_cost:
-        #    u_cost += ele
-        # u_cost = tf.add_n(d_cost)
-        #print('xxxxxxxxx')
-        #print("d_cost: " + str(d_cost))
         u_cost = torch.sum(d_cost)
-        #print('xxxxxxxxx')
-        #print("u_cost: " + str(u_cost.size()))
 
+        '''
         if labeled:
             s_cost = torch.nn.functional.cross_entropy(h_corr,target)  # supervised cost
-            #return u_cost + s_cost
-            return h_corr,s_cost
+            return h_corr,s_cost + u_cost
+        '''
 
         return h_corr,u_cost
 
@@ -274,8 +269,8 @@ model  = VAE()
 optimizer = optim.Adam(model.parameters(), lr=args.lr)#TODO: change to something
 
 
-#for param in model.parameters():
-#    print(type(param.data), param.size())
+for param in model.parameters():
+    print(type(param.data), param.size())
 
 def train(epoch):
     model.train()
@@ -285,7 +280,7 @@ def train(epoch):
 
         data = data.view(-1,784) #TODO possible reason of bad accuracy
         optimizer.zero_grad()
-        output,loss = model((data, target,True))
+        output,loss = model(data, target,True)
         loss.backward()
         train_loss += loss.data[0]
         optimizer.step()
@@ -298,13 +293,12 @@ def train(epoch):
     print('====> Epoch: {} Average loss: {:.4f}'.format(
         epoch, args.batch_size * train_loss / len(train_loader.dataset)))
 
-    '''
 
     for batch_idx, (data, target) in enumerate(unlabeled_train_loader):
         data, target = Variable(data), Variable(target)
         data = data.view(-1, 784)  # TODO possible reason of bad accuracy
         optimizer.zero_grad()
-        output,loss = model((data, target,False))
+        output,loss = model(data, target,False)
         loss.backward()
         optimizer.step()
 
@@ -313,7 +307,7 @@ def train(epoch):
                 epoch, batch_idx * len(data), len(train_loader.dataset),
                        100. * batch_idx / len(train_loader), loss.data[0]))
 
-    '''
+
 
 
 
@@ -325,9 +319,8 @@ def test(epoch, valid_loader):
 
     for data, target in valid_loader:
         data, target = Variable(data, volatile=True), Variable(target)
-        output,loss = model(data)
-        #print(output.data)
-        print(target)
+        data = data.view(-1, 784)
+        output,loss = model(data,target, True)
         test_loss += F.nll_loss(output, target).data[0]
         pred = output.data.max(1)[1] # get the index of the max log-probability
         correct += pred.eq(target.data).cpu().sum()
