@@ -37,7 +37,7 @@ args = parser.parse_args()
 
 
 # hyperparameters that denote the importance of each layer
-denoising_cost = [1000.0, 10.0, 0.10, 0.10, 0.10, 0.10, 0.10]
+denoising_cost = [10.0, 1.0, 0.10, 0.10, 0.10, 0.10, 0.10]
 
 
 torch.manual_seed(args.seed)
@@ -113,7 +113,7 @@ class Denoise(nn.Module):
     def forward(self, u,z_corr, m,v,layer):
         z_corr_denoised_l = self.denoise_function(z_corr, u, layer_sizes[layer])
 
-        z_est = (z_corr_denoised_l - m) / torch.pow(v,0.5)
+        z_est = (z_corr_denoised_l - m) / torch.pow(torch.add(v, 0.000001) ,0.5)
 
         return z_est
 
@@ -177,12 +177,11 @@ class VAE(nn.Module):
                 h_l = softmax(z_l)
                 d['z'][l] = z_l
                 d['h'][l] = h_l
-            # TODO h = softmax(self.weights['gamma'][l - 1] * (z + self.weights["beta"][l - 1]))
             else:
                 # use ReLU activation in hidden layers
                 relU = torch.nn.ReLU()
 
-                h_l = relU(z_l)  # TODO + self.weights["beta"][l - 1])
+                h_l = relU(z_l)
 
                 d['z'][l] = z_l
                 d['h'][l] = h_l
@@ -229,15 +228,14 @@ class VAE(nn.Module):
         z_est = {}
         z_est[L] = h_corr
 
-        d_cost = Variable(torch.FloatTensor(L + 1), requires_grad=False) # to store the denoising cost of all layers
+        d_cost = Variable(torch.FloatTensor(L + 1), requires_grad=False)
 
-        for l in range(L, 0, -1): #TODO: last layer not run
-            #print ("Layer ", l, ": ", layer_sizes[l + 1] if l + 1 < len(layer_sizes) else None, " -> ", layer_sizes[l], ", denoising cost: ", denoising_cost[l])
+        for l in range(L, -1, -1):
 
             if l == L:
                 u_l =  z_est[L]
             else:
-                u_l = torch.mm(z_est[l + 1], self.weights['V'][l])
+                u_l = torch.mm(z_est[l + 1], self.weights['V'][l+1])
 
             u_l,_,_ = self.batch_norm(u_l, False)
 
@@ -255,7 +253,6 @@ class VAE(nn.Module):
             z_est[l] = self.a[l](u_l,z_corr_encoder_l,m.expand(u_l.size()[0],u_l.size()[1]),v.expand(u_l.size()[0],u_l.size()[1]),l)
             self.optim[l].zero_grad()
 
-            #recon_loss = reconstruction_function(torch.sigmoid(z_est[l]), torch.sigmoid(z))\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
             recon_loss = torch.sum(self.reconstruction_function_n(z_est[l], z))
             recon_loss.backward(retain_variables=True)
             self.optim[l].step()
