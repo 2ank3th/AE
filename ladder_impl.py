@@ -206,16 +206,14 @@ class VAE(nn.Module):
 
             #post activation from previos layer
             h_l_prev = d['h'][l - 1]
+            z_pre = torch.mm(h_l_prev, self.weights['W'][l - 1])
+            z_pre =  z_pre + Variable(torch.mul(torch.randn(z_pre.size()),noise_std)) # pre-activation and batch normalization
 
-            z_pre = torch.mm(h_l_prev, self.weights['W'][l - 1])  # pre-activation and batch normalization
-
-            z_l,_,_  = self.batch_norm(z_pre, False)
-
-
+            z_l,_,_  = self.batch_norm(z_pre, True)
 
             relU = torch.nn.ReLU()
 
-            h_l = relU(z_l) #TODO + self.weights["beta"][l - 1])
+            h_l = relU(z_l)
 
             d['z'][l] = z_l
             d['h'][l] = h_l
@@ -223,7 +221,7 @@ class VAE(nn.Module):
         return d['h'][L], d
 
     def reconstruction_function_n(self, z_recon,z_input):
-        return torch.norm(z_recon - z_input, 2, 1) #TODO Try 0
+        return torch.norm(z_recon - z_input, 2, 1)
 
 
     def decoder(self,h_clean,h_corr,  d_clean, d_corr):
@@ -268,7 +266,7 @@ class VAE(nn.Module):
 
     def forward(self, x,target,labeled,test):
 
-        h_corr,d_corr = self.encoder_noise(x,0.3,labeled) #TODO: add noise
+        h_corr,d_corr = self.encoder_noise(x,0.2,labeled) #TODO: add noise
         h_clean,d_clean = self.encoder_clean(x,labeled)
 
         if test:
@@ -300,6 +298,7 @@ optimizer = optim.Adam(model.parameters(), lr=args.lr)
 def train(epoch):
     model.train()
     train_loss = 0
+
 
     for batch_idx, (data, target) in enumerate(train_loader):
         data, target = Variable(data), Variable(target)
