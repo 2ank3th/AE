@@ -21,7 +21,7 @@ parser.add_argument('--batch-size', type=int, default=64, metavar='N',
                     help='input batch size for training (default: 64)')
 parser.add_argument('--test-batch-size', type=int, default=64, metavar='N',
                     help='input batch size for testing (default: 1000)')
-parser.add_argument('--epochs', type=int, default=100, metavar='N',
+parser.add_argument('--epochs', type=int, default=50, metavar='N',
                     help='number of epochs to train (default: 10)')
 parser.add_argument('--lr', type=float, default=0.01, metavar='LR',
                     help='learning rate (default: 0.01)')
@@ -165,7 +165,7 @@ class VAE(nn.Module):
             # pre-activation and batch normalization
             z_pre = torch.mm(h_l_prev, self.weights['W'][l - 1])
 
-            z_l, m_l, v_l = self.batch_norm(z_pre, True)
+            z_l, m_l, v_l = self.batch_norm(z_pre, False)
 
 
             d['m'][l] = m_l
@@ -208,7 +208,7 @@ class VAE(nn.Module):
             z_pre = torch.mm(h_l_prev, self.weights['W'][l - 1])
             z_pre =  z_pre + Variable(torch.mul(torch.randn(z_pre.size()),noise_std)) # pre-activation and batch normalization
 
-            z_l,_,_  = self.batch_norm(z_pre, True)
+            z_l,_,_  = self.batch_norm(z_pre, False)
 
             relU = torch.nn.ReLU()
 
